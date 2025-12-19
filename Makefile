@@ -1,4 +1,4 @@
-.PHONY: help install test test-filter clean format lint
+.PHONY: help install test test-filter clean format lint typecheck all-checks
 
 help:
 	@echo "Available commands:"
@@ -8,6 +8,8 @@ help:
 	@echo "  make clean         - Clean temporary files"
 	@echo "  make format        - Format code with black"
 	@echo "  make lint          - Run linter (flake8)"
+	@echo "  make typecheck     - Run type checker (mypy)"
+	@echo "  make all-checks    - Run format + lint + typecheck"
 
 install:
 	pip install -r requirements.txt
@@ -28,8 +30,13 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 format:
-	black imcs test_imcs
+	black imcs/ test_imcs/ main.py
 
 lint:
-	flake8 imcs test_imcs
+	flake8 imcs/ test_imcs/ main.py --max-line-length=100
 
+typecheck:
+	mypy imcs/ --ignore-missing-imports
+
+all-checks: format lint typecheck
+	@echo "✅ All checks passed!"
