@@ -11,14 +11,15 @@
 > source venv/bin/activate
 > ```
 
+### Обработка изображений:
 ```bash
-# Обработать изображение
 python main.py --input test_gradient.png --ratio 0.8 --algorithm ista
+```
 
-# Результаты → examples/output/
-open examples/output/test_gradient/original.png
-open examples/output/test_gradient/reconstructed_ista.png
-cat examples/output/test_gradient/report.txt
+### Создание и обработка 1D сигналов:
+```bash
+# Cигнал можно создать интерактивно, либо загрузить готовый .npy
+python create_signal.py
 ```
 
 ---
@@ -38,11 +39,9 @@ cat examples/output/test_gradient/report.txt
   - **ISTA** (Iterative Shrinkage-Thresholding)
   - **SA** (Simulated Annealing)
 
-### Утилиты (`imcs/utils.py`)
-- Генерация измерительных матриц (Gaussian, Bernoulli)
-- DCT/IDCT преобразования
-- Алгоритмы восстановления
-- Метрики качества (MSE, PSNR, MAE)
+### Утилиты
+- **`imcs/utils.py`**: Генерация матриц, DCT/IDCT, алгоритмы восстановления, метрики (MSE, PSNR, MAE)
+- **`imcs/cli.py`**: CLI-утилиты (парсинг аргументов, поиск файлов, загрузка/сохранение изображений)
 
 ### Тесты (`test_imcs/test_basic.py`)
 - 15 unit-тестов

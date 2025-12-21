@@ -2,6 +2,67 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List
+from pathlib import Path
+from scipy.fftpack import dct
+
+
+def create_convergence_plot_from_decoder(
+    decoder,
+    compressed: bytes,
+    original: np.ndarray,
+    algorithm: str,
+    output_subdir: Path,
+):
+    """
+    Создает визуализацию сходимости из декодера.
+
+    Args:
+        decoder: IMCSDecoder с сохраненной историей
+        compressed: Сжатые данные
+        original: Исходное изображение
+        algorithm: Алгоритм восстановления
+        output_subdir: Директория для сохранения
+    """
+    from imcs.utils import generate_measurement_matrix
+
+    history = decoder.last_history
+    residuals = decoder.last_residuals
+    metadata, measurements = decoder._deserialize(compressed)
+
+    if metadata["is_2d"]:
+        n_row, n_col = metadata["original_shape"]
+        m_total = metadata["m_row"]
+        n_total = n_row * n_col
+
+        Phi = generate_measurement_matrix(
+            m_total, n_total, metadata["matrix_type"], metadata["seed"]
+        )
+
+        def create_dct_matrix(n):
+            return dct(np.eye(n), axis=0, norm="ortho")
+
+        Psi_row = create_dct_matrix(n_row)
+        Psi_col = create_dct_matrix(n_col)
+        Psi_2d = np.kron(Psi_col, Psi_row)
+
+        A = Phi @ Psi_2d.T
+        y = measurements
+
+        original_flat = original.flatten()
+        Psi = dct(np.eye(n_row * n_col), norm="ortho")
+        s_true = Psi @ original_flat
+
+        plot_convergence_path(
+            history,
+            residuals,
+            s_true,
+            A,
+            y,
+            decoder.lambda_param,
+            algorithm.upper(),
+            output_dir=str(output_subdir),
+            filename_prefix=f"convergence_{algorithm}",
+        )
 
 
 def plot_convergence_path(
