@@ -11,12 +11,12 @@
 > source venv/bin/activate
 > ```
 
-### Обработка изображений:
+### Обработка:
 ```bash
 python main.py --input test_gradient.png --ratio 0.8 --algorithm ista
 ```
 
-### Создание и обработка 1D сигналов:
+### Создание 1D сигналов:
 ```bash
 # Cигнал можно создать интерактивно, либо загрузить готовый .npy
 python create_signal.py
@@ -54,8 +54,9 @@ python create_signal.py
 ### Простой пример
 
 ```python
-from imcs import IMCSEncoder, IMCSDecoder
 import numpy as np
+from imcs import IMCSEncoder, IMCSDecoder
+from imcs.utils import calculate_compression_metrics
 
 # Разреженный сигнал
 x = np.zeros(100)
@@ -70,7 +71,6 @@ decoder = IMCSDecoder(reconstruction_algorithm="ista", lambda_param=0.01)
 x_reconstructed = decoder.decode(compressed)
 
 # Метрики
-from imcs.utils import calculate_compression_metrics
 metrics = calculate_compression_metrics(x, x_reconstructed)
 print(f"PSNR: {metrics['psnr']:.2f} dB")
 ```
