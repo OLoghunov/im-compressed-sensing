@@ -33,7 +33,7 @@ format:
 	black imcs/ test_imcs/ main.py
 
 lint:
-	flake8 imcs/ test_imcs/ main.py --max-line-length=100
+	flake8 imcs/ test_imcs/ main.py --max-line-length=100 --ignore=C901,E203
 
 typecheck:
 	mypy imcs/ --ignore-missing-imports

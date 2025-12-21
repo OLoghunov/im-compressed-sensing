@@ -96,6 +96,23 @@ open examples/output/photo/reconstructed_ista.png
 
 - **`examples/README.md`** - инструкции по примерам
 
+### Визуализация сходимости алгоритмов
+
+Графики показывают:
+- Скорость сходимости (residual по итерациям)
+- Эволюцию sparsity (количество ненулевых коэффициентов)
+- 2D ландшафт функции потерь с траекторией алгоритма
+
+Графики сохраняются в `examples/output/{image_name}/convergence_{algorithm}.png`
+
+```bash
+# С визуализацией (по умолчанию)
+python main.py --input photo.png
+
+# Без визуализации
+python main.py --input photo.png --no-visualize
+```
+
 ---
 
 ## Автор

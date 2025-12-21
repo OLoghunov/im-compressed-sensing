@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Union
+from typing import Union, Optional
 from pathlib import Path
 import struct
 from scipy.fftpack import dct, idct
@@ -28,18 +28,68 @@ class IMCSDecoder:
         self.max_iter = max_iter
         self.lambda_param = lambda_param
 
-    def decode(self, compressed_data: bytes) -> np.ndarray:
-        # Parse IMCS format
+        self.last_history = None
+        self.last_residuals = None
+        self.return_history = False
+
+    def decode(self, compressed_data: bytes, return_history: bool = False) -> np.ndarray:
+        self.return_history = return_history
+        self.last_history = None
+        self.last_residuals = None
+
         metadata, measurements = self._deserialize(compressed_data)
 
-        # Reconstruct based on dimensionality
         if metadata["is_2d"]:
             return self._decode_2d(measurements, metadata)
         else:
             return self._decode_1d(measurements, metadata)
 
+    def _run_reconstruction(
+        self,
+        y: np.ndarray,
+        A: np.ndarray,
+        sparsity: Optional[int] = None,
+        adaptive_lambda: Optional[float] = None,
+    ) -> np.ndarray:
+        """
+        Запускает алгоритм реконструкции и сохраняет историю если нужно.
+
+        Args:
+            y: Вектор измерений
+            A: Sensing matrix
+            sparsity: Параметр sparsity для OMP (опционально)
+            adaptive_lambda: Параметр lambda для ISTA/SA (опционально)
+
+        Returns:
+            Восстановленный разреженный вектор s
+        """
+        if self.reconstruction_algorithm == "omp":
+            if sparsity is None:
+                raise ValueError("sparsity is required for OMP algorithm")
+            result = omp(y, A, sparsity, return_history=self.return_history)
+        elif self.reconstruction_algorithm in ["basis_pursuit", "iterative_threshold"]:
+            if adaptive_lambda is None:
+                raise ValueError("adaptive_lambda is required for ISTA algorithm")
+            result = ista(y, A, adaptive_lambda, self.max_iter, return_history=self.return_history)
+        elif self.reconstruction_algorithm == "simulated_annealing":
+            if adaptive_lambda is None:
+                raise ValueError("adaptive_lambda is required for SA algorithm")
+            result = simulated_annealing(
+                y, A, adaptive_lambda, max_iter=self.max_iter, return_history=self.return_history
+            )
+        else:
+            if sparsity is None:
+                raise ValueError("sparsity is required for OMP algorithm")
+            result = omp(y, A, sparsity, return_history=self.return_history)
+
+        if self.return_history:
+            s, self.last_history, self.last_residuals = result
+        else:
+            s = result
+
+        return s
+
     def _deserialize(self, data: bytes) -> tuple[dict, np.ndarray]:
-        # Check minimum size and magic number
         if len(data) < 28:
             raise ValueError("Invalid IMCS data: too short")
         if data[:4] != b"IMCS":
@@ -113,19 +163,11 @@ class IMCSDecoder:
         # Target sparsity (rough estimate)
         sparsity = max(int(0.2 * n), 5)
 
+        # Adaptive lambda: scale with signal size
+        adaptive_lambda = self.lambda_param * (n / 1000.0)
+
         # Reconstruct sparse coefficients
-        if self.reconstruction_algorithm == "omp":
-            s = omp(y, A, sparsity)
-        elif self.reconstruction_algorithm in ["basis_pursuit", "iterative_threshold"]:
-            # Adaptive lambda: scale with signal size
-            adaptive_lambda = self.lambda_param * (n / 1000.0)
-            s = ista(y, A, adaptive_lambda, self.max_iter)
-        elif self.reconstruction_algorithm == "simulated_annealing":
-            # Adaptive lambda: scale with signal size
-            adaptive_lambda = self.lambda_param * (n / 1000.0)
-            s = simulated_annealing(y, A, adaptive_lambda, max_iter=self.max_iter)
-        else:
-            s = omp(y, A, sparsity)  # Default to OMP
+        s = self._run_reconstruction(y, A, sparsity=sparsity, adaptive_lambda=adaptive_lambda)
 
         # Transform back from DCT domain: x = Ψ^T · s = IDCT(s)
         x = idct(s, norm="ortho")
@@ -162,20 +204,12 @@ class IMCSDecoder:
         # Adaptive sparsity based on measurements
         sparsity = max(min(m_total // 2, n_total // 4), 1)
 
+        # Adaptive lambda: scale with image size
+        # Smaller images need smaller lambda
+        adaptive_lambda = self.lambda_param * (n_total / 1000.0)
+
         # Solve: y = A · s
-        if self.reconstruction_algorithm == "omp":
-            s = omp(y, A, sparsity)
-        elif self.reconstruction_algorithm in ["basis_pursuit", "iterative_threshold"]:
-            # Adaptive lambda: scale with image size
-            # Smaller images need smaller lambda
-            adaptive_lambda = self.lambda_param * (n_total / 1000.0)
-            s = ista(y, A, adaptive_lambda, self.max_iter)
-        elif self.reconstruction_algorithm == "simulated_annealing":
-            # Adaptive lambda: scale with image size
-            adaptive_lambda = self.lambda_param * (n_total / 1000.0)
-            s = simulated_annealing(y, A, adaptive_lambda, self.max_iter)
-        else:
-            s = omp(y, A, sparsity)
+        s = self._run_reconstruction(y, A, sparsity=sparsity, adaptive_lambda=adaptive_lambda)
 
         # Transform back: x = Ψ^T · s
         x_vec = Psi_2d.T @ s

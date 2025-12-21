@@ -65,86 +65,36 @@ def compute_sparsity(signal: np.ndarray, threshold: float = 1e-10) -> int:
 
 
 def validate_imcs_format(data: bytes) -> bool:
-    """
-    Validate if data is in valid IMCS format.
-
-    Args:
-        data: Data to validate
-
-    Returns:
-        True if valid IMCS format, False otherwise
-    """
-    # Check magic number "IMCS"
     if len(data) < 4:
         return False
     return data[:4] == b"IMCS"
 
 
-# =============================================================================
-# DCT Transforms (Sparsity Basis)
-# =============================================================================
-
-
 def dct2(block: np.ndarray) -> np.ndarray:
-    """
-    Compute 2D Discrete Cosine Transform.
-
-    Most natural images are sparse in the DCT domain - this is why JPEG works!
-    DCT concentrates energy in a few low-frequency coefficients.
-
-    Args:
-        block: 2D array (image or block)
-
-    Returns:
-        DCT coefficients (same shape as input)
-    """
     return dct(dct(block.T, norm="ortho").T, norm="ortho")
 
 
 def idct2(block: np.ndarray) -> np.ndarray:
-    """
-    Compute inverse 2D Discrete Cosine Transform.
-
-    Args:
-        block: 2D array of DCT coefficients
-
-    Returns:
-        Reconstructed spatial domain data
-    """
     return idct(idct(block.T, norm="ortho").T, norm="ortho")
 
 
-# =============================================================================
-# Reconstruction Algorithms
-# =============================================================================
-
-
-def omp(y: np.ndarray, A: np.ndarray, sparsity: int, tolerance: float = 1e-6) -> np.ndarray:
-    """
-    Orthogonal Matching Pursuit (OMP) algorithm for sparse signal recovery.
-
-    OMP is a greedy algorithm that iteratively selects columns of A that
-    correlate most with the residual.
-
-    Reference: Tropp & Gilbert (2007) - "Signal Recovery From Random
-    Measurements Via Orthogonal Matching Pursuit"
-
-    Args:
-        y: Measurement vector (M,)
-        A: Sensing matrix (M, N), typically A = Φ·Ψ
-        sparsity: Maximum number of non-zero coefficients (K)
-        tolerance: Stop if residual norm falls below this value
-
-    Returns:
-        Sparse coefficient vector s (N,) such that y ≈ A·s
-    """
+def omp(
+    y: np.ndarray,
+    A: np.ndarray,
+    sparsity: int,
+    tolerance: float = 1e-6,
+    return_history: bool = False,
+):
     m, n = A.shape
     y = y.flatten()
 
-    # Initialize
     residual = y.copy()  # r_0 = y
     support: list[int] = []  # Λ - indices of selected atoms
     s = np.zeros(n)  # sparse coefficients
+
+    if return_history:
+        history = [s.copy()]
+        residuals = [float(np.linalg.norm(residual))]
 
     for _ in range(sparsity):
         # Step 1: Find index with maximum correlation
@@ -163,6 +113,13 @@ def omp(y: np.ndarray, A: np.ndarray, sparsity: int, tolerance: float = 1e-6) ->
         # r = y - A_Λ s_Λ
         residual = y - A_support @ s_support
 
+        # Save history
+        if return_history:
+            s_temp = np.zeros(n)
+            s_temp[support] = s_support
+            history.append(s_temp.copy())
+            residuals.append(float(np.linalg.norm(residual)))
+
         # Check convergence
         if np.linalg.norm(residual) < tolerance:
             break
@@ -170,6 +127,8 @@ def omp(y: np.ndarray, A: np.ndarray, sparsity: int, tolerance: float = 1e-6) ->
     # Construct full sparse vector
     s[support] = s_support
 
+    if return_history:
+        return s, history, residuals
     return s
 
 
@@ -179,24 +138,8 @@ def ista(
     lambda_param: float = 0.1,
     max_iter: int = 1000,
     tolerance: float = 1e-6,
-) -> np.ndarray:
-    """
-    Iterative Shrinkage-Thresholding Algorithm (ISTA) for L1-minimization.
-
-    Solves: min_s (1/2)||y - As||_2^2 + λ||s||_1
-
-    This is the Basis Pursuit Denoising (BPDN) formulation.
-
-    Args:
-        y: Measurement vector (M,)
-        A: Sensing matrix (M, N)
-        lambda_param: Regularization parameter (larger = sparser solution)
-        max_iter: Maximum iterations
-        tolerance: Convergence tolerance
-
-    Returns:
-        Sparse coefficient vector s (N,)
-    """
+    return_history: bool = False,
+):
     m, n = A.shape
     y = y.flatten()
 
@@ -204,16 +147,18 @@ def ista(
     # L = ||A^T A||_2 ≈ largest eigenvalue
     L = np.linalg.norm(A, ord=2) ** 2
 
-    # Step size
     step = 1.0 / L
 
     # Soft thresholding operator
     def soft_threshold(x, thresh):
         return np.sign(x) * np.maximum(np.abs(x) - thresh, 0)
 
-    # Initialize
     s = np.zeros(n)
     threshold = lambda_param * step
+
+    if return_history:
+        history = [s.copy()]
+        residuals = [float(np.linalg.norm(y - A @ s))]
 
     for _ in range(max_iter):
         s_old = s.copy()
@@ -225,10 +170,17 @@ def ista(
         # Proximal step (soft thresholding)
         s = soft_threshold(s, threshold)
 
+        # Save history
+        if return_history:
+            history.append(s.copy())
+            residuals.append(float(np.linalg.norm(y - A @ s)))
+
         # Check convergence
         if np.linalg.norm(s - s_old) < tolerance:
             break
 
+    if return_history:
+        return s, history, residuals
     return s
 
 
@@ -242,15 +194,8 @@ def simulated_annealing(
     step_size: float = 10.0,
     bounds: tuple = (-1000, 1000),
     adaptive_step: bool = True,
-) -> np.ndarray:
-    """
-    Simulated Annealing для решения задачи LASSO в Compressed Sensing.
-
-    Решает: min_s [ ||y - A·s||₂² + λ·||s||₁ ]
-
-    Returns:
-        Вектор s (N,) — разреженное решение
-    """
+    return_history: bool = False,
+):
     m, n = A.shape
     y = y.flatten()
     blo, bup = bounds
@@ -269,6 +214,10 @@ def simulated_annealing(
     s_best = s_current.copy()
     f_best = f_current
 
+    if return_history:
+        history = [s_current.copy()]
+        residuals = [float(np.linalg.norm(y - A @ s_current))]
+
     T = T_init
     current_step = step_size
 
@@ -284,9 +233,6 @@ def simulated_annealing(
         s_candidate = s_current + current_step * perturbation
 
         s_candidate = np.clip(s_candidate, blo, bup)
-
-        # НЕ применяем soft thresholding на каждой итерации - это убивает SA
-        # Пусть алгоритм свободно исследует пространство решений
 
         f_candidate = objective(s_candidate)
 
@@ -311,6 +257,11 @@ def simulated_annealing(
         accept_count += int(accepted)
         total_count += 1
 
+        # Save history every 50 iterations
+        if return_history and iteration % 50 == 0:
+            history.append(s_current.copy())
+            residuals.append(float(np.linalg.norm(y - A @ s_current)))
+
         if adaptive_step and total_count > 0 and total_count % 50 == 0:
             acceptance_rate = accept_count / total_count
             if acceptance_rate > 0.6:
@@ -322,34 +273,18 @@ def simulated_annealing(
 
         T = cooling_rate * T
 
-    # В конце применяем мягкое пороговое обрезание для разреженности
-    # Порог адаптивный - относительно максимального значения
     threshold = 0.01 * np.max(np.abs(s_best))
     s_best = np.sign(s_best) * np.maximum(np.abs(s_best) - threshold, 0)
 
+    if return_history:
+        return s_best, history, residuals
     return s_best
 
 
 def calculate_compression_metrics(original: np.ndarray, reconstructed: np.ndarray) -> dict:
-    """
-    Calculate compression quality metrics.
-
-    Args:
-        original: Original signal (can be 1D or 2D)
-        reconstructed: Reconstructed signal (same shape as original)
-
-    Returns:
-        Dictionary with metrics:
-        - mse: Mean Squared Error
-        - rmse: Root Mean Squared Error
-        - psnr: Peak Signal-to-Noise Ratio (in dB)
-        - mae: Mean Absolute Error
-        - relative_error: ||x - x_hat||_2 / ||x||_2
-    """
     if original.shape != reconstructed.shape:
         raise ValueError(f"Shape mismatch: {original.shape} vs {reconstructed.shape}")
 
-    # Flatten for consistent calculations
     orig_flat: np.ndarray = original.flatten().astype(np.float64)
     recon_flat: np.ndarray = reconstructed.flatten().astype(np.float64)
 
