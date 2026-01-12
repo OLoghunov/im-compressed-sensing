@@ -135,11 +135,6 @@ class IMCSDecoder:
         measurements_bytes = data[header_size : header_size + data_length]
         measurements = np.frombuffer(measurements_bytes, dtype=np.float64)
 
-        # Reshape if 2D AND separable (m_col > 0)
-        # If m_col == 0, it's full random (keep as 1D vector)
-        if is_2d and m_col > 0:
-            measurements = measurements.reshape(m_row, m_col)
-
         return metadata, measurements
 
     def _decode_1d(self, y: np.ndarray, metadata: dict) -> np.ndarray:

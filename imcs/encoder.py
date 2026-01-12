@@ -71,12 +71,11 @@ class IMCSEncoder:
         y = Phi @ x_vec
 
         # Serialize to IMCS format
-        # Note: m_col=0 indicates "full random" (not separable)
         return self._serialize(
             measurements=y,
             original_shape=(n_row, n_col),
-            m_row=m_total,  # Total measurements
-            m_col=0,  # 0 = full random (not separable)
+            m_row=m_total,
+            m_col=0,
         )
 
     def _serialize(
