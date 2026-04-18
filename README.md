@@ -27,12 +27,6 @@ python run.py
 pip install -r requirements.txt
 ```
 
-Если нужен только современный GUI-слой:
-
-```bash
-pip install PySide6
-```
-
 ### Консоль без GUI (один файл)
 
 ```bash
