@@ -1,10 +1,3 @@
-# Зависимости Python (pip install -r requirements.txt).
-# Основной современный GUI использует Qt через PySide6.
-# Legacy GUI на Tkinter сохраняется как fallback. Если
-#   import tkinter даёт No module named '_tkinter':
-#   • macOS (Homebrew): brew install python-tk
-#   • затем пересоздайте venv или используйте python.org installer с Tcl/Tk.
-
 numpy>=1.24.0
 scipy>=1.10.0
 
