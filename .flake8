@@ -16,7 +16,5 @@ ignore =
 
 per-file-ignores =
     __init__.py:F401,F403
-    test_decoder.py:F841
-    test_encoder.py:F841
 
 max-complexity = 10

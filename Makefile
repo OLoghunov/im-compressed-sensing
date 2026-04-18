@@ -1,10 +1,9 @@
-.PHONY: help install test test-filter clean format lint typecheck all-checks
+.PHONY: help install install-gui clean format lint typecheck all-checks
 
 help:
 	@echo "Available commands:"
-	@echo "  make install       - Install dependencies"
-	@echo "  make test          - Run all tests"
-	@echo "  make test-filter FILTER=<name> - Run tests matching filter"
+	@echo "  make install       - Install dependencies (pip)"
+	@echo "  make install-gui   - pip + подсказка по Tk для GUI (macOS: brew install python-tk)"
 	@echo "  make clean         - Clean temporary files"
 	@echo "  make format        - Format code with black"
 	@echo "  make lint          - Run linter (flake8)"
@@ -15,11 +14,14 @@ install:
 	pip install -r requirements.txt
 	pip install -e .
 
-test:
-	pytest
-
-test-filter:
-	pytest -k "$(FILTER)"
+install-gui: install
+	@echo ""
+	@echo "Если GUI падает на import tkinter / _tkinter: Tk не из pip."
+	@echo "  macOS (Homebrew):  brew install python-tk"
+	@echo "  Затем пересоздайте venv: python3 -m venv venv && source venv/bin/activate && make install"
+	@echo ""
+	@python3 -c "import tkinter; print('tkinter: OK')" 2>/dev/null || \
+		(echo "tkinter недоступен — см. выше."; exit 1)
 
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
@@ -30,10 +32,10 @@ clean:
 	find . -type f -name "*.pyc" -delete
 
 format:
-	black imcs/ test_imcs/ main.py
+	black imcs/ run.py main.py
 
 lint:
-	flake8 imcs/ test_imcs/ main.py --max-line-length=100 --ignore=C901,E203,W503
+	flake8 imcs/ run.py main.py --max-line-length=100 --ignore=C901,E203,W503
 
 typecheck:
 	mypy imcs/ --ignore-missing-imports

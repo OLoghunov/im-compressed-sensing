@@ -25,6 +25,14 @@
 - `18_texture_random_32x32.png` — случайная текстура (PSNR: ~14 dB ⚠️)
 - `19_concentric_circles_32x32.png` — концентрические круги
 
+### Крупнее (для нагрузочных тестов декодера):
+- `20_radial_gradient_128x128.png` — радиальный синус + горизонтальный градиент, **128×128** (удобно сравнивать полный режим и `--block-size 8`)
+
+### Большие цветные изображения:
+- `21_color_spectrum_512x512.png` — плавный цветовой градиент, **512×512**
+- `22_color_landscape_1280x720.png` — синтетический ландшафт, **1280×720**
+- `23_color_topography_1920x1080.png` — цветная топографическая карта, **1920×1080**
+
 ## 1D Сигналы
 
 ### Разреженные:
@@ -61,10 +69,10 @@
 
 Пример:
 ```bash
-python main.py --input sinusoidal --algorithm ista
+python run.py examples/input/signal_sinusoidal.npy --algorithm ista
 
 # Результат в examples/output/signal_sinusoidal/:
-#   - comparison_ista.png  ← ОТКРОЙТЕ ЭТОТ ГРАФИК! 📊
+#   - comparison_ista.png — график сравнения
 #   - original.npy
 #   - reconstructed_ista.npy
 #   - report.txt
@@ -72,28 +80,23 @@ python main.py --input sinusoidal --algorithm ista
 
 ## Использование
 
-### Изображения:
+### Окно (рекомендуется)
 ```bash
-# Одно изображение
-python main.py --input 18 --algorithm ista
+python run.py
+```
+Выберите файл в списке (или «Выбрать файл…») и нажмите «Запустить…».
 
-# Все 32×32
-python main.py --input 32x32 --algorithm omp
-
-# Все простые
-python main.py --input checker --algorithm ista
+### Консоль — изображения
+```bash
+python run.py examples/input/18_texture_random_32x32.png --algorithm ista
+python run.py examples/input/14_checkerboard_8x8_32x32.png --algorithm omp
+python run.py examples/input/22_color_landscape_1280x720.png --algorithm fista --color-mode ycbcr
 ```
 
-### Сигналы:
+### Консоль — сигналы
 ```bash
-# Один сигнал
-python main.py --input test_sparse --algorithm omp --no-visualize
-
-# Все сигналы
-python main.py --input signal --algorithm ista --no-visualize
-
-# Синусоидальный
-python main.py --input sinusoidal --algorithm ista
+python run.py examples/input/test_sparse_signal.npy --algorithm omp
+python run.py examples/input/signal_sinusoidal.npy --algorithm ista
 ```
 
 ## Выводы
@@ -101,6 +104,7 @@ python main.py --input sinusoidal --algorithm ista
 **Для изображений:**
 - ✅ Простые геометрические паттерны: PSNR > 30 dB
 - ⚠️ Случайные текстуры: PSNR < 15 dB (требуется wavelet basis)
+- ✅ Цветные синтетические сцены можно использовать для демонстрации режима `rgb`/`ycbcr`
 
 **Для 1D сигналов:**
 - ✅ Разреженные импульсы: PSNR > 20 dB

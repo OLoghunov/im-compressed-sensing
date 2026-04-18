@@ -1,0 +1,5 @@
+case_key,case_category,input_file,width,height,block_size,compression_ratio,algorithm,basis,matrix_type,measurement_mode,encode_time_s,decode_time_s,psnr_db,ssim,mae,compressed_size_bytes,output_dir
+smooth_gradient,smooth,02_gradient_h.png,16,16,8,0.5,omp,dct,gaussian,shared,0.000216,0.000866,306.83209,1.0,0.0,1064,/Users/oylogunov/imcs/examples/output/benchmarks/block_study/02_gradient_h_b8_r0p5_omp_dct_gaussian_shared
+edge_rich_cross,edge-rich,10_cross.png,16,16,8,0.5,omp,dct,gaussian,shared,0.000149,0.001236,25.11763,0.946317,4.283043,1064,/Users/oylogunov/imcs/examples/output/benchmarks/block_study/10_cross_b8_r0p5_omp_dct_gaussian_shared
+textured_random,textured,18_texture_random_32x32.png,32,32,8,0.5,omp,dct,gaussian,shared,0.000416,0.00937,11.25618,0.512233,43.156795,4136,/Users/oylogunov/imcs/examples/output/benchmarks/block_study/18_texture_random_32x32_b8_r0p5_omp_dct_gaussian_shared
+large_radial,large,20_radial_gradient_128x128.png,128,128,8,0.5,omp,dct,gaussian,shared,0.005572,0.142378,43.270233,0.983017,0.995039,65576,/Users/oylogunov/imcs/examples/output/benchmarks/block_study/20_radial_gradient_128x128_b8_r0p5_omp_dct_gaussian_shared

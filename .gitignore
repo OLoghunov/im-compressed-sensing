@@ -89,7 +89,6 @@ benchmarks/results/
 *.jpeg
 *.bmp
 *.gif
-!test_imcs/fixtures/*.png
 
 # Temporary files
 *.tmp

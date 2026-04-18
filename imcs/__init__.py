@@ -39,6 +39,7 @@ from .utils import (
     idct2,
     omp,
     ista,
+    fista,
     simulated_annealing,
 )
 
@@ -53,5 +54,6 @@ __all__ = [
     "idct2",
     "omp",
     "ista",
+    "fista",
     "simulated_annealing",
 ]

@@ -42,23 +42,23 @@
 
 ## Использование
 
-### Обработать лучшие примеры
+### Окно (проще всего)
 
 ```bash
-python main.py --input 01_constant.png --ratio 0.5
-
-python main.py --input 02_gradient_h.png --ratio 0.3
-
-python main.py --input 04_square.png --ratio 0.4
-
-python main.py --input 06_stripes_v.png --ratio 0.5
+python run.py
 ```
 
-### Обработать все изображения сразу
+Выберите файл в списке и нажмите «Запустить…».
+
+### Консоль: отдельные примеры
 
 ```bash
-python main.py --ratio 0.5 --algorithm omp
+python run.py examples/input/01_constant.png --ratio 0.5
+
+python run.py examples/input/02_gradient_h.png --ratio 0.3
 ```
+
+(Команды из корня репозитория.)
 
 ### Результаты
 
@@ -71,8 +71,7 @@ python main.py --ratio 0.5 --algorithm omp
 
 ## Дополнительно
 
-- См. `README.md` в корне проекта для полной документации
-- Запустите `pytest test_imcs/` для проверки корректности
+- См. `README.md` в корне проекта
 
 ---
 

@@ -32,11 +32,14 @@ setup(
     install_requires=[
         "numpy>=1.24.0,<2.0.0",
         "scipy>=1.10.0,<2.0.0",
+        "Pillow>=10.0.0,<12.0.0",
+        "matplotlib>=3.7.0,<4.0.0",
     ],
     extras_require={
+        "gui": [
+            "PySide6",
+        ],
         "dev": [
-            "pytest>=7.4.0,<8.0.0",
-            "pytest-cov>=4.1.0,<5.0.0",
             "black>=23.0.0,<24.0.0",
             "flake8>=6.0.0,<7.0.0",
             "mypy>=1.5.0,<2.0.0",

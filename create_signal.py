@@ -159,7 +159,7 @@ def main():
 
     print("\n" + "-" * 60)
     print("Для обработки запустите:")
-    print(f"  python main.py --input {name} --algorithm ista")
+    print(f"  python run.py examples/input/{name} --algorithm ista")
     print("-" * 60 + "\n")
 
 

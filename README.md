@@ -1,120 +1,143 @@
 # IMCS - Image Compression using Compressed Sensing
 
-Дипломная работа: Инженерная реализация формата сжатия данных `.imcs` на основе Compressed Sensing.
+Дипломная работа: инженерная реализация формата сжатия данных `.imcs` на основе Compressed Sensing.
 
 ---
 
 ## Быстрый старт
 
-> **Активируйте виртуальное окружение перед работой:**
+> **Активируйте виртуальное окружение:**
 > ```bash
 > source venv/bin/activate
 > ```
 
-### Обработка:
+### Главная команда
+
 ```bash
-python main.py --input test_gradient.png --ratio 0.8 --algorithm ista
+python run.py
 ```
 
-### Создание 1D сигналов:
+Открывается **окно**: список файлов из `examples/input/`, кнопка «Запустить кодирование и декодирование», предпросмотр (Matplotlib). Параметры по умолчанию: `ratio=0.5`, алгоритм `omp`, блоки `8×8` для 2D, цветной режим `ycbcr` — можно поменять в форме.
+
+По умолчанию запускается **новый Qt GUI** с боковой панелью `Настройки стенда`, где можно менять параметры блоков, алгоритма, цвета, `measurement_mode`, `matrix_type` и управлять числом процессов для распараллеливания. Если Qt-зависимость недоступна, `run.py` автоматически откатывается к legacy GUI.
+
+### GUI зависимости
+
 ```bash
-# Cигнал можно создать интерактивно, либо загрузить готовый .npy
+pip install -r requirements.txt
+```
+
+Если нужен только современный GUI-слой:
+
+```bash
+pip install PySide6
+```
+
+### Консоль без GUI (один файл)
+
+```bash
+python run.py examples/input/02_gradient_h.png
+```
+
+Опции при необходимости: `--ratio`, `--algorithm`, `--block`, `--basis`, `--matrix`,
+`--measurement-mode`, `--color-mode` (см. `python run.py -h`).
+
+### Совместимость
+
+```bash
+python main.py
+```
+
+Это то же самое, что `python run.py` (точка входа перенаправлена).
+
+### Создание 1D сигналов
+
+```bash
 python create_signal.py
 ```
+
+### Benchmark-исследования
+
+```bash
+python benchmark.py --block-sizes 8 16 32 --ratios 0.3 0.5 0.7 --algorithms omp ista
+```
+
+Сводка и артефакты сохраняются в `examples/output/benchmarks/block_study/`.
+
+---
+
+## Структура проекта
+
+| Модуль | Назначение |
+|--------|------------|
+| `run.py` | Точка входа: GUI, один прогон в консоли, цвет и последовательности кадров |
+| `benchmark.py` | Воспроизводимые benchmark-запуски для дипломных экспериментов |
+| `imcs/pipeline.py` | Логика кодирования/декодирования и значения по умолчанию |
+| `imcs/gui_qt.py` | Основной современный Qt GUI с панелью `Настройки стенда` |
+| `imcs/gui.py` | Legacy GUI на Tkinter/Matplotlib, используется как fallback |
+| `imcs/encoder.py`, `imcs/decoder.py` | Кодек |
+| `imcs/utils.py` | Матрицы измерений, OMP/ISTA/FISTA, метрики |
+| `imcs/benchmarking.py` | Фиксированный benchmark-набор, summary и графики |
+| `imcs/cli.py` | Загрузка/сохранение изображений и сигналов |
 
 ---
 
 ## Что реализовано
 
 ### Кодер (`imcs/encoder.py`)
-- Сжатие 1D сигналов: `y = Φ · x`
-- Сжатие 2D изображений: `Y = Φ_row · X · Φ_col^T`
-- Формат файла `.imcs`
-- Поддержка PNG, JPEG, NumPy массивов
+- 1D: `y = Φ · x`
+- 2D: блочный режим (JPEG-подобно) или полный кадр на малых размерах
+- Формат `.imcs`
 
 ### Декодер (`imcs/decoder.py`)
-- Восстановление из сжатых данных
-- 3 алгоритма:
-  - **OMP** (Orthogonal Matching Pursuit)
-  - **ISTA** (Iterative Shrinkage-Thresholding)
-  - **SA** (Simulated Annealing)
+- Восстановление: **OMP**, **ISTA**, **FISTA**, **SA**
+
+### Исследовательские расширения
+- блочная обработка с `shared` и `per_block` стратегиями для `Phi`
+- базисы `DCT` и `wavelet` (Haar)
+- цветные изображения через `RGB` и `YCbCr`
+- baseline для последовательностей кадров
+- benchmark summary с `PSNR`, `SSIM`, временем кодирования и декодирования
 
 ### Утилиты
-- **`imcs/utils.py`**: Генерация матриц, DCT/IDCT, алгоритмы восстановления, метрики (MSE, PSNR, MAE)
-- **`imcs/cli.py`**: CLI-утилиты (парсинг аргументов, поиск файлов, загрузка/сохранение изображений)
-
-### Тесты (`test_imcs/test_basic.py`)
-- 15 unit-тестов
-- Проверка корректности базовых функций
+- **`imcs/utils.py`**: DCT, алгоритмы восстановления, PSNR и др.
 
 ---
 
-## Использование
-
-### Простой пример
+## Python API
 
 ```python
 import numpy as np
 from imcs import IMCSEncoder, IMCSDecoder
 from imcs.utils import calculate_compression_metrics
 
-# Разреженный сигнал
 x = np.zeros(100)
 x[[10, 30, 50]] = [1.0, 2.0, 1.5]
 
-# Кодирование
 encoder = IMCSEncoder(compression_ratio=0.5, seed=42)
 compressed = encoder.encode(x)
 
-# Декодирование
-decoder = IMCSDecoder(reconstruction_algorithm="ista", lambda_param=0.01)
+decoder = IMCSDecoder(reconstruction_algorithm="iterative_threshold", lambda_param=0.01)
 x_reconstructed = decoder.decode(compressed)
 
-# Метрики
 metrics = calculate_compression_metrics(x, x_reconstructed)
 print(f"PSNR: {metrics['psnr']:.2f} dB")
 ```
 
-### Обработка изображений
+---
 
-```bash
-# Положите изображение в examples/input/
-cp ~/Pictures/photo.png examples/input/
+## Визуализация сходимости (отдельный сценарий)
 
-# Обработайте
-python main.py --input photo.png --ratio 0.8 --algorithm ista
-
-# Результаты
-open examples/output/photo/original.png
-open examples/output/photo/reconstructed_ista.png
-```
+Графики сходимости можно строить через `visualization/plot_convergence.py`, если вызывать декодер с `return_history=True` из своего кода. В GUI по умолчанию сходимость не рисуется, чтобы не усложнять окно.
 
 ---
 
-## Документация
+## Benchmarks
 
-- **`examples/README.md`** - инструкции по примерам
-
-### Визуализация сходимости алгоритмов
-
-Графики показывают:
-- Скорость сходимости (residual по итерациям)
-- Эволюцию sparsity (количество ненулевых коэффициентов)
-- 2D ландшафт функции потерь с траекторией алгоритма
-
-Графики сохраняются в `examples/output/{image_name}/convergence_{algorithm}.png`
-
-```bash
-# С визуализацией (по умолчанию)
-python main.py --input photo.png
-
-# Без визуализации
-python main.py --input photo.png --no-visualize
-```
+Фиксированный baseline и схема результата описаны в `BENCHMARKS.md`.
 
 ---
 
 ## Автор
 
-Oleg Y. Logunov  
-Дипломная работа, 2025
+Oleg Y. Logunov

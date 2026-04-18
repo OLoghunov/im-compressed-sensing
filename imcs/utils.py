@@ -1,6 +1,15 @@
+import struct
+from typing import Optional
+
 import numpy as np
 from scipy.fftpack import dct, idct
-from typing import Optional
+from scipy.ndimage import gaussian_filter
+
+# IMCS binary layout: v1 = 32 bytes; v2 adds 8 bytes (block_h, block_w, content_h, content_w)
+IMCS_HEADER_V1_FMT = "<4s B B B B I I I I I I"
+IMCS_HEADER_V1_SIZE = struct.calcsize(IMCS_HEADER_V1_FMT)
+IMCS_HEADER_V2_EXT_FMT = "<HHHH"
+IMCS_HEADER_V2_SIZE = IMCS_HEADER_V1_SIZE + struct.calcsize(IMCS_HEADER_V2_EXT_FMT)
 
 
 def generate_measurement_matrix(
@@ -22,22 +31,21 @@ def generate_measurement_matrix(
     Returns:
         Measurement matrix of shape (m, n), normalized columns
     """
-    if seed is not None:
-        np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     if matrix_type == "gaussian":
         # Gaussian random matrix - elements from N(0, 1/m)
         # This provides good RIP properties with high probability
-        matrix = np.random.randn(m, n) / np.sqrt(m)
+        matrix = rng.standard_normal((m, n)) / np.sqrt(m)
 
     elif matrix_type == "bernoulli":
         # Bernoulli random matrix - elements ±1/√m with equal probability
         # Also provides good RIP properties
-        matrix = np.random.choice([-1, 1], size=(m, n)) / np.sqrt(m)
+        matrix = rng.choice([-1, 1], size=(m, n)) / np.sqrt(m)
 
     elif matrix_type == "random":
         # Uniform random matrix (less common, but still works)
-        matrix = (np.random.rand(m, n) - 0.5) * 2 / np.sqrt(m)
+        matrix = (rng.random((m, n)) - 0.5) * 2 / np.sqrt(m)
 
     else:
         raise ValueError(
@@ -76,6 +84,45 @@ def dct2(block: np.ndarray) -> np.ndarray:
 
 def idct2(block: np.ndarray) -> np.ndarray:
     return idct(idct(block.T, norm="ortho").T, norm="ortho")
+
+
+def _is_power_of_two(n: int) -> bool:
+    return n > 0 and (n & (n - 1) == 0)
+
+
+def create_dct_matrix(n: int) -> np.ndarray:
+    Psi = np.zeros((n, n))
+    for i in range(n):
+        e_i = np.zeros(n)
+        e_i[i] = 1.0
+        Psi[:, i] = dct(e_i, norm="ortho")
+    return Psi
+
+
+def create_haar_matrix(n: int) -> np.ndarray:
+    if not _is_power_of_two(n):
+        raise ValueError("Wavelet basis currently requires power-of-two dimensions")
+    if n == 1:
+        return np.ones((1, 1))
+
+    H_half = create_haar_matrix(n // 2)
+    top = np.kron(H_half, np.array([1.0, 1.0]))
+    bottom = np.kron(np.eye(n // 2), np.array([1.0, -1.0]))
+    return np.vstack((top, bottom)) / np.sqrt(2.0)
+
+
+def create_basis_matrix(n: int, basis: str = "dct") -> np.ndarray:
+    if basis == "dct":
+        return create_dct_matrix(n)
+    if basis == "wavelet":
+        return create_haar_matrix(n)
+    raise ValueError(f"Unknown basis: {basis}. Use 'dct' or 'wavelet'")
+
+
+def create_2d_basis_matrix(n_row: int, n_col: int, basis: str = "dct") -> np.ndarray:
+    Psi_row = create_basis_matrix(n_row, basis)
+    Psi_col = create_basis_matrix(n_col, basis)
+    return np.kron(Psi_col, Psi_row)
 
 
 def omp(
@@ -176,6 +223,53 @@ def ista(
             residuals.append(float(np.linalg.norm(y - A @ s)))
 
         # Check convergence
+        if np.linalg.norm(s - s_old) < tolerance:
+            break
+
+    if return_history:
+        return s, history, residuals
+    return s
+
+
+def fista(
+    y: np.ndarray,
+    A: np.ndarray,
+    lambda_param: float = 0.1,
+    max_iter: int = 1000,
+    tolerance: float = 1e-6,
+    return_history: bool = False,
+):
+    _, n = A.shape
+    y = y.flatten()
+
+    L = np.linalg.norm(A, ord=2) ** 2
+    step = 1.0 / L
+
+    def soft_threshold(x, thresh):
+        return np.sign(x) * np.maximum(np.abs(x) - thresh, 0)
+
+    s = np.zeros(n)
+    z = s.copy()
+    t = 1.0
+    threshold = lambda_param * step
+
+    if return_history:
+        history = [s.copy()]
+        residuals = [float(np.linalg.norm(y - A @ s))]
+
+    for _ in range(max_iter):
+        s_old = s.copy()
+        gradient = A.T @ (A @ z - y)
+        s_next = soft_threshold(z - step * gradient, threshold)
+        t_next = 0.5 * (1.0 + np.sqrt(1.0 + 4.0 * t * t))
+        z = s_next + ((t - 1.0) / t_next) * (s_next - s)
+        s = s_next
+        t = t_next
+
+        if return_history:
+            history.append(s.copy())
+            residuals.append(float(np.linalg.norm(y - A @ s)))
+
         if np.linalg.norm(s - s_old) < tolerance:
             break
 
@@ -313,10 +407,64 @@ def calculate_compression_metrics(original: np.ndarray, reconstructed: np.ndarra
     else:
         psnr = np.inf  # Perfect reconstruction
 
+    ssim = calculate_ssim(original, reconstructed)
+
     return {
         "mse": float(mse),
         "rmse": float(rmse),
         "mae": float(mae),
         "psnr": float(psnr),
         "relative_error": float(relative_error),
+        "ssim": float(ssim),
     }
+
+
+def calculate_ssim(original: np.ndarray, reconstructed: np.ndarray) -> float:
+    if original.shape != reconstructed.shape:
+        raise ValueError(f"Shape mismatch: {original.shape} vs {reconstructed.shape}")
+
+    orig = np.asarray(original, dtype=np.float64)
+    recon = np.asarray(reconstructed, dtype=np.float64)
+
+    if orig.ndim == 1:
+        orig = orig[np.newaxis, :]
+        recon = recon[np.newaxis, :]
+
+    if orig.ndim == 2:
+        return _calculate_ssim_single_channel(orig, recon)
+
+    if orig.ndim == 3:
+        scores = [
+            _calculate_ssim_single_channel(orig[..., ch], recon[..., ch])
+            for ch in range(orig.shape[2])
+        ]
+        return float(np.mean(scores))
+
+    raise ValueError(f"SSIM supports 1D, 2D, or 3D arrays, got {orig.ndim}D")
+
+
+def _calculate_ssim_single_channel(original: np.ndarray, reconstructed: np.ndarray) -> float:
+    data_range = float(
+        max(np.max(original) - np.min(original), np.max(reconstructed) - np.min(reconstructed), 1.0)
+    )
+    c1 = (0.01 * data_range) ** 2
+    c2 = (0.03 * data_range) ** 2
+
+    mu_orig = gaussian_filter(original, sigma=1.5)
+    mu_recon = gaussian_filter(reconstructed, sigma=1.5)
+
+    mu_orig_sq = mu_orig * mu_orig
+    mu_recon_sq = mu_recon * mu_recon
+    mu_orig_recon = mu_orig * mu_recon
+
+    sigma_orig_sq = gaussian_filter(original * original, sigma=1.5) - mu_orig_sq
+    sigma_recon_sq = gaussian_filter(reconstructed * reconstructed, sigma=1.5) - mu_recon_sq
+    sigma_orig_recon = (
+        gaussian_filter(original * reconstructed, sigma=1.5) - mu_orig_recon
+    )
+
+    numerator = (2.0 * mu_orig_recon + c1) * (2.0 * sigma_orig_recon + c2)
+    denominator = (mu_orig_sq + mu_recon_sq + c1) * (sigma_orig_sq + sigma_recon_sq + c2)
+    denominator = np.maximum(denominator, 1e-12)
+
+    return float(np.mean(numerator / denominator))

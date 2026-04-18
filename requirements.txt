@@ -1,11 +1,16 @@
+# Зависимости Python (pip install -r requirements.txt).
+# Основной современный GUI использует Qt через PySide6.
+# Legacy GUI на Tkinter сохраняется как fallback. Если
+#   import tkinter даёт No module named '_tkinter':
+#   • macOS (Homebrew): brew install python-tk
+#   • затем пересоздайте venv или используйте python.org installer с Tcl/Tk.
+
 numpy>=1.24.0
 scipy>=1.10.0
 
 Pillow>=10.0.0
 matplotlib>=3.7.0
-
-pytest>=7.4.0,<8.0.0
-pytest-cov>=4.1.0,<5.0.0
+PySide6
 
 black>=23.0.0,<24.0.0
 flake8>=6.0.0,<7.0.0

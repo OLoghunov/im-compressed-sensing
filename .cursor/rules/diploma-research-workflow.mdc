@@ -1,0 +1,17 @@
+---
+description: Research workflow for IMCS diploma work
+alwaysApply: true
+---
+
+# IMCS Diploma Workflow
+
+- Treat this project as a research codebase for a master's thesis on compressed sensing.
+- For every substantial proposal, separate: scientific goal, engineering change, expected metric impact, and thesis value.
+- Prefer directions that improve scalability, reproducibility, image quality, or decoding speed on large images and future video.
+- Before large changes, propose a short experiment plan with: hypothesis, baseline, variables, metrics, expected outcome, and risks.
+- Always think in terms of baselines and comparisons, not isolated features.
+- Prioritize these metrics: decode time, encode time, PSNR, SSIM, compression ratio, and visible artifacts.
+- When discussing new features, explain how they fit into future thesis chapters or experiments.
+- Favor reproducible pipelines, fixed seeds, saved reports, and benchmark tables over UI polish.
+- Keep recommendations realistic for a diploma timeline; explicitly mark ideas as core, optional, or stretch goals.
+- For image/video extensions, prefer incremental steps: grayscale blocks -> large images -> color -> frame sequences.
