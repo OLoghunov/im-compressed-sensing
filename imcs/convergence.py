@@ -21,6 +21,15 @@ from imcs.utils import (
 )
 
 
+def clear_previous_convergence_plots(output_subdir: Path) -> None:
+    """Remove old convergence_*.png so repeated runs into the same folder do not mix algorithms."""
+    for path in output_subdir.glob("convergence_*.png"):
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
 def create_representative_block_convergence_plot(
     original: np.ndarray,
     reconstructed: np.ndarray,

@@ -91,6 +91,9 @@ class _QueueLogWriter:
 
 
 def _run_processing_task(task: dict, result_queue) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+
     log_writer = _QueueLogWriter(result_queue)
     try:
         task_type = task["task_type"]
@@ -113,6 +116,9 @@ def _run_processing_task(task: dict, result_queue) -> None:
 
 
 def _run_analytics_task(task: dict, result_queue) -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+
     try:
         payload = build_analytics_payload(task["result"])
         result_queue.put({"status": "ok", "payload": payload})
@@ -120,22 +126,33 @@ def _run_analytics_task(task: dict, result_queue) -> None:
         result_queue.put({"status": "error", "message": str(exc)})
 
 
+# ---------------------------------------------------------------------------
+# PreviewCanvas — два subplot'а (исходное / результат)
+# ---------------------------------------------------------------------------
 class PreviewCanvas(FigureCanvasQTAgg):
+    _ADJUST = dict(left=0.04, right=0.98, top=0.92, bottom=0.06, wspace=0.08)
+
     def __init__(self) -> None:
         self.figure = Figure(figsize=(8.8, 5.6), dpi=100, facecolor="#f5f7fb")
         super().__init__(self.figure)
         self.ax_input = self.figure.add_subplot(121, facecolor="#ffffff")
         self.ax_result = self.figure.add_subplot(122, facecolor="#ffffff")
-        self.figure.subplots_adjust(left=0.04, right=0.98, top=0.92, bottom=0.06, wspace=0.08)
+        self.figure.subplots_adjust(**self._ADJUST)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.show_empty()
 
+    # -- helpers -------------------------------------------------------------
     def _style_axis(self, ax, title: str) -> None:
         ax.clear()
         ax.set_title(title, fontsize=11, pad=10, color="#202734")
         ax.tick_params(colors="#667085", labelsize=8)
         for spine in ax.spines.values():
             spine.set_color("#d0d7e2")
+
+    def _finalize(self) -> None:
+        """Пере-применить subplots_adjust (ax.clear сбрасывает) и перерисовать."""
+        self.figure.subplots_adjust(**self._ADJUST)
+        self.draw_idle()
 
     def _draw_placeholder(self, ax, title: str, text: str) -> None:
         self._style_axis(ax, title)
@@ -166,10 +183,11 @@ class PreviewCanvas(FigureCanvasQTAgg):
         ax.plot(signal, color="#2f6fed", lw=1.4)
         ax.grid(True, alpha=0.35, color="#d8deea")
 
+    # -- public API ----------------------------------------------------------
     def show_empty(self) -> None:
         self._draw_placeholder(self.ax_input, "Исходные данные", "Выберите файл")
         self._draw_placeholder(self.ax_result, "После IMCS", "Запустите обработку")
-        self.draw_idle()
+        self._finalize()
 
     def show_input_path(self, path: Path) -> None:
         if _is_image_path(path):
@@ -185,12 +203,16 @@ class PreviewCanvas(FigureCanvasQTAgg):
                 signal = np.load(path)
             else:
                 signal = np.loadtxt(path)
-            self._draw_signal(self.ax_input, np.asarray(signal, dtype=np.float64).ravel(), "Исходный сигнал")
+            self._draw_signal(
+                self.ax_input,
+                np.asarray(signal, dtype=np.float64).ravel(),
+                "Исходный сигнал",
+            )
             self._draw_placeholder(self.ax_result, "После IMCS", "Нажмите «Запустить IMCS»")
         else:
             self._draw_placeholder(self.ax_input, "Исходные данные", "Неподдерживаемый формат")
             self._draw_placeholder(self.ax_result, "После IMCS", "Нажмите «Запустить IMCS»")
-        self.draw_idle()
+        self._finalize()
 
     def show_result(self, original: np.ndarray, reconstructed: np.ndarray) -> None:
         if original.ndim == 1:
@@ -199,19 +221,27 @@ class PreviewCanvas(FigureCanvasQTAgg):
         else:
             self._draw_image(self.ax_input, original, "Исходное")
             self._draw_image(self.ax_result, reconstructed, "После IMCS")
-        self.draw_idle()
+        self._finalize()
 
 
+# ---------------------------------------------------------------------------
+# AnalyticsCanvas — аналитические графики
+# ---------------------------------------------------------------------------
 class AnalyticsCanvas(FigureCanvasQTAgg):
-    def __init__(self) -> None:
-        self.figure = Figure(figsize=(11.0, 7.8), dpi=100, facecolor="#ffffff")
+    """Одноразовый canvas — создаётся заново для каждого payload."""
+
+    _ADJUST = dict(left=0.085, right=0.98, top=0.935, bottom=0.06)
+
+    def __init__(self, height_inches: float = 7.8) -> None:
+        self.figure = Figure(figsize=(11.0, height_inches), dpi=100, facecolor="#ffffff")
         super().__init__(self.figure)
         self.setStyleSheet("background: #ffffff;")
+        # Фиксируем высоту — QScrollArea будет скроллить
+        pixel_h = int(height_inches * 100)
+        self.setFixedHeight(pixel_h)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.show_empty()
 
     def _style_axis(self, ax, title: str) -> None:
-        ax.clear()
         ax.set_title(title, fontsize=11, pad=10, color="#202734")
         ax.tick_params(colors="#667085", labelsize=8)
         for spine in ax.spines.values():
@@ -227,36 +257,6 @@ class AnalyticsCanvas(FigureCanvasQTAgg):
         for spine in ax.spines.values():
             spine.set_visible(False)
 
-    def show_empty(self, text: str = "Запустите IMCS, чтобы построить аналитику") -> None:
-        self._resize_canvas(height_inches=7.8)
-        self.figure.clear()
-        self.figure.set_facecolor("#ffffff")
-        ax = self.figure.add_subplot(111, facecolor="#ffffff")
-        self._style_axis(ax, "Аналитика")
-        ax.text(
-            0.5,
-            0.5,
-            text,
-            ha="center",
-            va="center",
-            fontsize=11,
-            color="#7a8599",
-            transform=ax.transAxes,
-        )
-        ax.set_xticks([])
-        ax.set_yticks([])
-        self.draw_idle()
-
-    def show_loading(self) -> None:
-        self.show_empty("Графики рассчитываются...")
-
-    def show_payload(self, payload: AnalyticsPayload) -> None:
-        if payload.mode == "signal":
-            self._draw_signal_payload(payload)
-        else:
-            self._draw_image_payload(payload)
-        self.draw_idle()
-
     def wheelEvent(self, event) -> None:  # noqa: N802
         event.ignore()
 
@@ -269,176 +269,11 @@ class AnalyticsCanvas(FigureCanvasQTAgg):
             return self._export_signal_panels(output_dir, payload)
         return self._export_image_panels(output_dir, payload)
 
-    def _draw_signal_payload(self, payload: AnalyticsPayload) -> None:
-        convergence_count = len(payload.convergence_images)
-        height_inches = 7.6 + (2.8 * convergence_count)
-        self._resize_canvas(height_inches=height_inches)
-        self.figure.clear()
-        self.figure.set_facecolor("#ffffff")
-        height_ratios = [1.0, 1.0] + ([1.2] * convergence_count)
-        grid = self.figure.add_gridspec(
-            2 + convergence_count,
-            2,
-            hspace=0.24,
-            wspace=0.22,
-            height_ratios=height_ratios,
-        )
-        ax_overlay = self.figure.add_subplot(grid[0, 0], facecolor="#ffffff")
-        ax_error = self.figure.add_subplot(grid[0, 1], facecolor="#ffffff")
-        ax_coeff = self.figure.add_subplot(grid[1, 0], facecolor="#ffffff")
-        ax_sorted = self.figure.add_subplot(grid[1, 1], facecolor="#ffffff")
-
-        self._style_axis(ax_overlay, "Исходный и восстановленный сигнал")
-        ax_overlay.plot(payload.original_display, color="#2f6fed", lw=1.3, label="Исходный")
-        ax_overlay.plot(
-            payload.reconstructed_display, color="#12b76a", lw=1.1, alpha=0.85, label="После IMCS"
-        )
-        ax_overlay.grid(True, alpha=0.35, color="#d8deea")
-        ax_overlay.legend(loc="upper right", fontsize=8)
-        self._set_axis_labels(ax_overlay, "Отсчёт", "Амплитуда")
-
-        self._style_axis(ax_error, "Абсолютная ошибка")
-        ax_error.plot(payload.error_display, color="#ef4444", lw=1.1)
-        ax_error.grid(True, alpha=0.35, color="#d8deea")
-        self._set_axis_labels(ax_error, "Отсчёт", "Ошибка")
-
-        self._style_axis(ax_coeff, f"Коэффициенты в базисе {payload.basis.upper()}")
-        ax_coeff.plot(
-            payload.coeff_display_original,
-            color="#2f6fed",
-            lw=1.1,
-            alpha=0.9,
-            label="Исходный",
-        )
-        ax_coeff.plot(
-            payload.coeff_display_reconstructed,
-            color="#12b76a",
-            lw=1.0,
-            alpha=0.85,
-            label="После IMCS",
-        )
-        ax_coeff.grid(True, alpha=0.35, color="#d8deea")
-        ax_coeff.legend(loc="upper right", fontsize=8)
-        self._set_axis_labels(ax_coeff, "Индекс коэффициента", "Значение")
-
-        self._style_axis(ax_sorted, "Модули коэффициентов")
-        ax_sorted.semilogy(payload.sorted_coeff_original, color="#2f6fed", lw=1.2, label="Исходный")
-        ax_sorted.semilogy(
-            payload.sorted_coeff_reconstructed,
-            color="#12b76a",
-            lw=1.1,
-            alpha=0.85,
-            label="После IMCS",
-        )
-        ax_sorted.grid(True, alpha=0.35, color="#d8deea")
-        ax_sorted.legend(loc="upper right", fontsize=8)
-        self._set_axis_labels(ax_sorted, "Индекс после сортировки", "Модуль коэффициента")
-
-        for idx, image in enumerate(payload.convergence_images):
-            ax_conv = self.figure.add_subplot(grid[2 + idx, :], facecolor="#ffffff")
-            title = payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость"
-            self._style_axis(ax_conv, title)
-            ax_conv.imshow(image)
-            ax_conv.set_xticks([])
-            ax_conv.set_yticks([])
-            self._hide_axis_frame(ax_conv)
-
-        self.figure.suptitle(
-            f"Аналитика: {payload.source_label} | {payload.analysis_note}",
-            fontsize=12,
-            color="#202734",
-            y=0.972,
-        )
-        self.figure.subplots_adjust(left=0.085, right=0.98, top=0.935, bottom=0.06)
-
-    def _draw_image_payload(self, payload: AnalyticsPayload) -> None:
-        convergence_count = len(payload.convergence_images)
-        height_inches = 7.8 + (3.0 * convergence_count)
-        self._resize_canvas(height_inches=height_inches)
-        self.figure.clear()
-        self.figure.set_facecolor("#ffffff")
-        height_ratios = [0.95, 1.0] + ([1.35] * convergence_count)
-        grid = self.figure.add_gridspec(
-            2 + convergence_count,
-            3,
-            hspace=0.24,
-            wspace=0.22,
-            height_ratios=height_ratios,
-        )
-        ax_original = self.figure.add_subplot(grid[0, 0], facecolor="#ffffff")
-        ax_reconstructed = self.figure.add_subplot(grid[0, 1], facecolor="#ffffff")
-        ax_error = self.figure.add_subplot(grid[0, 2], facecolor="#ffffff")
-        ax_hist = self.figure.add_subplot(grid[1, 0], facecolor="#ffffff")
-        ax_basis = self.figure.add_subplot(grid[1, 1], facecolor="#ffffff")
-        ax_sorted = self.figure.add_subplot(grid[1, 2], facecolor="#ffffff")
-
-        self._style_axis(ax_original, "Исходное")
-        self._imshow_analysis_image(ax_original, payload.original_display)
-        ax_original.set_xticks([])
-        ax_original.set_yticks([])
-
-        self._style_axis(ax_reconstructed, "После IMCS")
-        self._imshow_analysis_image(ax_reconstructed, payload.reconstructed_display)
-        ax_reconstructed.set_xticks([])
-        ax_reconstructed.set_yticks([])
-
-        self._style_axis(ax_error, "Heatmap ошибки")
-        ax_error.imshow(payload.error_display, cmap="inferno")
-        ax_error.set_xticks([])
-        ax_error.set_yticks([])
-
-        self._style_axis(ax_hist, "Гистограмма абсолютной ошибки")
-        edges = payload.histogram_edges
-        counts = payload.histogram_counts
-        widths = np.diff(edges)
-        ax_hist.bar(edges[:-1], counts, width=widths, align="edge", color="#2f6fed", alpha=0.8)
-        ax_hist.grid(True, alpha=0.25, color="#d8deea")
-        self._set_axis_labels(ax_hist, "Абсолютная ошибка", "Частота")
-
-        self._style_axis(ax_basis, f"Heatmap коэффициентов ({payload.basis.upper()})")
-        ax_basis.imshow(payload.coeff_display_original, cmap="magma")
-        ax_basis.set_xticks([])
-        ax_basis.set_yticks([])
-
-        self._style_axis(ax_sorted, "Модули коэффициентов")
-        ax_sorted.semilogy(payload.sorted_coeff_original, color="#2f6fed", lw=1.2, label="Исходное")
-        ax_sorted.semilogy(
-            payload.sorted_coeff_reconstructed,
-            color="#12b76a",
-            lw=1.1,
-            alpha=0.85,
-            label="После IMCS",
-        )
-        ax_sorted.grid(True, alpha=0.35, color="#d8deea")
-        ax_sorted.legend(loc="upper right", fontsize=8)
-        self._set_axis_labels(ax_sorted, "Индекс после сортировки", "Модуль коэффициента")
-
-        for idx, image in enumerate(payload.convergence_images):
-            ax_conv = self.figure.add_subplot(grid[2 + idx, :], facecolor="#ffffff")
-            title = payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость"
-            self._style_axis(ax_conv, title)
-            ax_conv.imshow(image)
-            ax_conv.set_xticks([])
-            ax_conv.set_yticks([])
-            self._hide_axis_frame(ax_conv)
-
-        self.figure.suptitle(
-            f"Аналитика: {payload.source_label} | {payload.analysis_note}",
-            fontsize=12,
-            color="#202734",
-            y=0.972,
-        )
-        self.figure.subplots_adjust(left=0.085, right=0.98, top=0.935, bottom=0.06)
-
     def _imshow_analysis_image(self, ax, image: np.ndarray) -> None:
         if image.ndim == 3:
             ax.imshow(np.clip(image, 0, 255).astype(np.uint8))
-            return
-        ax.imshow(image, cmap="gray", vmin=0, vmax=255)
-
-    def _resize_canvas(self, *, height_inches: float) -> None:
-        self.figure.set_size_inches(11.0, height_inches, forward=True)
-        self.setMinimumHeight(int(height_inches * self.figure.dpi))
+        else:
+            ax.imshow(image, cmap="gray", vmin=0, vmax=255)
 
     def _create_export_figure(self, title: str, width: float = 5.6, height: float = 4.2):
         fig = Figure(figsize=(width, height), dpi=200, facecolor="#ffffff")
@@ -451,9 +286,9 @@ class AnalyticsCanvas(FigureCanvasQTAgg):
         fig.clear()
         return path
 
+    # --- export panels (без изменений) ---
     def _export_signal_panels(self, output_dir: Path, payload: AnalyticsPayload) -> list[Path]:
         exported: list[Path] = []
-
         fig, ax = self._create_export_figure("Исходный и восстановленный сигнал", 6.2, 4.0)
         ax.plot(payload.original_display, color="#2f6fed", lw=1.3, label="Исходный")
         ax.plot(payload.reconstructed_display, color="#12b76a", lw=1.1, alpha=0.85, label="После IMCS")
@@ -486,22 +321,17 @@ class AnalyticsCanvas(FigureCanvasQTAgg):
 
         for idx, image in enumerate(payload.convergence_images):
             fig, ax = self._create_export_figure(
-                payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость",
-                6.0,
-                4.5,
-            )
+                payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость", 6.0, 4.5)
             ax.imshow(image)
             ax.set_xticks([])
             ax.set_yticks([])
             self._hide_axis_frame(ax)
             suffix = payload.convergence_titles[idx].split()[-1].lower() if idx < len(payload.convergence_titles) else str(idx)
             exported.append(self._save_export_figure(fig, output_dir / f"convergence_{suffix}.png"))
-
         return exported
 
     def _export_image_panels(self, output_dir: Path, payload: AnalyticsPayload) -> list[Path]:
         exported: list[Path] = []
-
         fig, ax = self._create_export_figure("Исходное", 5.0, 4.5)
         self._imshow_analysis_image(ax, payload.original_display)
         ax.set_xticks([])
@@ -545,20 +375,194 @@ class AnalyticsCanvas(FigureCanvasQTAgg):
 
         for idx, image in enumerate(payload.convergence_images):
             fig, ax = self._create_export_figure(
-                payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость",
-                6.0,
-                4.5,
-            )
+                payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость", 6.0, 4.5)
             ax.imshow(image)
             ax.set_xticks([])
             ax.set_yticks([])
             self._hide_axis_frame(ax)
             suffix = payload.convergence_titles[idx].split()[-1].lower() if idx < len(payload.convergence_titles) else str(idx)
             exported.append(self._save_export_figure(fig, output_dir / f"convergence_{suffix}.png"))
-
         return exported
 
 
+def _build_empty_analytics_canvas(
+    text: str = "Запустите IMCS, чтобы построить аналитику",
+) -> AnalyticsCanvas:
+    """Создать canvas с placeholder-текстом."""
+    canvas = AnalyticsCanvas(height_inches=7.8)
+    ax = canvas.figure.add_subplot(111, facecolor="#ffffff")
+    canvas._style_axis(ax, "Аналитика")
+    ax.text(
+        0.5, 0.5, text,
+        ha="center", va="center", fontsize=11, color="#7a8599",
+        transform=ax.transAxes,
+    )
+    ax.set_xticks([])
+    ax.set_yticks([])
+    canvas.figure.subplots_adjust(**AnalyticsCanvas._ADJUST)
+    canvas.draw_idle()
+    return canvas
+
+
+
+def _build_loading_analytics_canvas() -> AnalyticsCanvas:
+    canvas = AnalyticsCanvas(height_inches=7.8)
+    ax = canvas.figure.add_subplot(111, facecolor="#ffffff")
+    canvas._style_axis(ax, "Аналитика")
+    ax.text(0.5, 0.5, "Графики рассчитываются...",
+            ha="center", va="center", fontsize=11, color="#7a8599",
+            transform=ax.transAxes)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    canvas.figure.subplots_adjust(**AnalyticsCanvas._ADJUST)
+    canvas.draw_idle()
+    return canvas
+
+
+def _build_payload_analytics_canvas(payload: AnalyticsPayload) -> AnalyticsCanvas:
+    """Создать свежий canvas с отрисованным payload."""
+    if payload.mode == "signal":
+        return _build_signal_canvas(payload)
+    return _build_image_canvas(payload)
+
+
+def _build_signal_canvas(payload: AnalyticsPayload) -> AnalyticsCanvas:
+    convergence_count = len(payload.convergence_images)
+    height_inches = 7.6 + (2.8 * convergence_count)
+    canvas = AnalyticsCanvas(height_inches=height_inches)
+    fig = canvas.figure
+
+    height_ratios = [1.0, 1.0] + ([1.2] * convergence_count)
+    grid = fig.add_gridspec(
+        2 + convergence_count, 2,
+        hspace=0.24, wspace=0.22, height_ratios=height_ratios,
+    )
+
+    ax_overlay = fig.add_subplot(grid[0, 0], facecolor="#ffffff")
+    ax_error = fig.add_subplot(grid[0, 1], facecolor="#ffffff")
+    ax_coeff = fig.add_subplot(grid[1, 0], facecolor="#ffffff")
+    ax_sorted = fig.add_subplot(grid[1, 1], facecolor="#ffffff")
+
+    canvas._style_axis(ax_overlay, "Исходный и восстановленный сигнал")
+    ax_overlay.plot(payload.original_display, color="#2f6fed", lw=1.3, label="Исходный")
+    ax_overlay.plot(payload.reconstructed_display, color="#12b76a", lw=1.1, alpha=0.85, label="После IMCS")
+    ax_overlay.grid(True, alpha=0.35, color="#d8deea")
+    ax_overlay.legend(loc="upper right", fontsize=8)
+    canvas._set_axis_labels(ax_overlay, "Отсчёт", "Амплитуда")
+
+    canvas._style_axis(ax_error, "Абсолютная ошибка")
+    ax_error.plot(payload.error_display, color="#ef4444", lw=1.1)
+    ax_error.grid(True, alpha=0.35, color="#d8deea")
+    canvas._set_axis_labels(ax_error, "Отсчёт", "Ошибка")
+
+    canvas._style_axis(ax_coeff, f"Коэффициенты в базисе {payload.basis.upper()}")
+    ax_coeff.plot(payload.coeff_display_original, color="#2f6fed", lw=1.1, alpha=0.9, label="Исходный")
+    ax_coeff.plot(payload.coeff_display_reconstructed, color="#12b76a", lw=1.0, alpha=0.85, label="После IMCS")
+    ax_coeff.grid(True, alpha=0.35, color="#d8deea")
+    ax_coeff.legend(loc="upper right", fontsize=8)
+    canvas._set_axis_labels(ax_coeff, "Индекс коэффициента", "Значение")
+
+    canvas._style_axis(ax_sorted, "Модули коэффициентов")
+    ax_sorted.semilogy(payload.sorted_coeff_original, color="#2f6fed", lw=1.2, label="Исходный")
+    ax_sorted.semilogy(payload.sorted_coeff_reconstructed, color="#12b76a", lw=1.1, alpha=0.85, label="После IMCS")
+    ax_sorted.grid(True, alpha=0.35, color="#d8deea")
+    ax_sorted.legend(loc="upper right", fontsize=8)
+    canvas._set_axis_labels(ax_sorted, "Индекс после сортировки", "Модуль коэффициента")
+
+    for idx, image in enumerate(payload.convergence_images):
+        ax_conv = fig.add_subplot(grid[2 + idx, :], facecolor="#ffffff")
+        title = payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость"
+        canvas._style_axis(ax_conv, title)
+        ax_conv.imshow(image)
+        ax_conv.set_xticks([])
+        ax_conv.set_yticks([])
+        canvas._hide_axis_frame(ax_conv)
+
+    fig.suptitle(
+        f"Аналитика: {payload.source_label} | {payload.analysis_note}",
+        fontsize=12, color="#202734", y=0.972,
+    )
+    fig.subplots_adjust(**AnalyticsCanvas._ADJUST)
+    canvas.draw_idle()
+    return canvas
+
+
+def _build_image_canvas(payload: AnalyticsPayload) -> AnalyticsCanvas:
+    convergence_count = len(payload.convergence_images)
+    height_inches = 7.8 + (3.0 * convergence_count)
+    canvas = AnalyticsCanvas(height_inches=height_inches)
+    fig = canvas.figure
+
+    height_ratios = [0.95, 1.0] + ([1.35] * convergence_count)
+    grid = fig.add_gridspec(
+        2 + convergence_count, 3,
+        hspace=0.24, wspace=0.22, height_ratios=height_ratios,
+    )
+
+    ax_original = fig.add_subplot(grid[0, 0], facecolor="#ffffff")
+    ax_reconstructed = fig.add_subplot(grid[0, 1], facecolor="#ffffff")
+    ax_error = fig.add_subplot(grid[0, 2], facecolor="#ffffff")
+    ax_hist = fig.add_subplot(grid[1, 0], facecolor="#ffffff")
+    ax_basis = fig.add_subplot(grid[1, 1], facecolor="#ffffff")
+    ax_sorted = fig.add_subplot(grid[1, 2], facecolor="#ffffff")
+
+    canvas._style_axis(ax_original, "Исходное")
+    canvas._imshow_analysis_image(ax_original, payload.original_display)
+    ax_original.set_xticks([])
+    ax_original.set_yticks([])
+
+    canvas._style_axis(ax_reconstructed, "После IMCS")
+    canvas._imshow_analysis_image(ax_reconstructed, payload.reconstructed_display)
+    ax_reconstructed.set_xticks([])
+    ax_reconstructed.set_yticks([])
+
+    canvas._style_axis(ax_error, "Heatmap ошибки")
+    ax_error.imshow(payload.error_display, cmap="inferno")
+    ax_error.set_xticks([])
+    ax_error.set_yticks([])
+
+    canvas._style_axis(ax_hist, "Гистограмма абсолютной ошибки")
+    edges = payload.histogram_edges
+    counts = payload.histogram_counts
+    widths = np.diff(edges)
+    ax_hist.bar(edges[:-1], counts, width=widths, align="edge", color="#2f6fed", alpha=0.8)
+    ax_hist.grid(True, alpha=0.25, color="#d8deea")
+    canvas._set_axis_labels(ax_hist, "Абсолютная ошибка", "Частота")
+
+    canvas._style_axis(ax_basis, f"Heatmap коэффициентов ({payload.basis.upper()})")
+    ax_basis.imshow(payload.coeff_display_original, cmap="magma")
+    ax_basis.set_xticks([])
+    ax_basis.set_yticks([])
+
+    canvas._style_axis(ax_sorted, "Модули коэффициентов")
+    ax_sorted.semilogy(payload.sorted_coeff_original, color="#2f6fed", lw=1.2, label="Исходное")
+    ax_sorted.semilogy(payload.sorted_coeff_reconstructed, color="#12b76a", lw=1.1, alpha=0.85, label="После IMCS")
+    ax_sorted.grid(True, alpha=0.35, color="#d8deea")
+    ax_sorted.legend(loc="upper right", fontsize=8)
+    canvas._set_axis_labels(ax_sorted, "Индекс после сортировки", "Модуль коэффициента")
+
+    for idx, image in enumerate(payload.convergence_images):
+        ax_conv = fig.add_subplot(grid[2 + idx, :], facecolor="#ffffff")
+        title = payload.convergence_titles[idx] if idx < len(payload.convergence_titles) else "Сходимость"
+        canvas._style_axis(ax_conv, title)
+        ax_conv.imshow(image)
+        ax_conv.set_xticks([])
+        ax_conv.set_yticks([])
+        canvas._hide_axis_frame(ax_conv)
+
+    fig.suptitle(
+        f"Аналитика: {payload.source_label} | {payload.analysis_note}",
+        fontsize=12, color="#202734", y=0.972,
+    )
+    fig.subplots_adjust(**AnalyticsCanvas._ADJUST)
+    canvas.draw_idle()
+    return canvas
+
+
+
+# ---------------------------------------------------------------------------
+# Main window
+# ---------------------------------------------------------------------------
 class IMCSQtMainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
@@ -589,8 +593,8 @@ class IMCSQtMainWindow(QMainWindow):
         self.output_dir_edit.setText(str(OUTPUT_DIR.resolve()))
         self._set_running_state(False)
         self.preview.show_empty()
-        self.analytics_canvas.show_empty()
 
+    # -- theme ---------------------------------------------------------------
     def _apply_theme(self) -> None:
         self.setStyleSheet(
             """
@@ -706,6 +710,7 @@ class IMCSQtMainWindow(QMainWindow):
             """
         )
 
+    # -- build UI ------------------------------------------------------------
     def _build_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
@@ -713,6 +718,7 @@ class IMCSQtMainWindow(QMainWindow):
         root.setContentsMargins(18, 18, 18, 18)
         root.setSpacing(14)
 
+        # --- top card ---
         top_card = QFrame()
         top_card.setObjectName("topCard")
         top_layout = QHBoxLayout(top_card)
@@ -750,7 +756,9 @@ class IMCSQtMainWindow(QMainWindow):
         self.btn_view_toggle = QToolButton()
         self.btn_view_toggle.setObjectName("analyticsButton")
         self.btn_view_toggle.setText("Аналитика")
-        self.btn_view_toggle.setToolTip("Станет доступна после первого успешного запуска IMCS.")
+        self.btn_view_toggle.setToolTip(
+            "Станет доступна после первого успешного запуска IMCS."
+        )
         self.btn_view_toggle.clicked.connect(self._toggle_view)
         self.btn_view_toggle.setEnabled(False)
         top_layout.addWidget(self.btn_view_toggle)
@@ -764,8 +772,10 @@ class IMCSQtMainWindow(QMainWindow):
 
         root.addWidget(top_card)
 
+        # --- view stack ---
         self.view_stack = QStackedWidget()
 
+        # page 0 — run
         run_page = QWidget()
         run_layout = QVBoxLayout(run_page)
         run_layout.setContentsMargins(0, 0, 0, 0)
@@ -781,7 +791,9 @@ class IMCSQtMainWindow(QMainWindow):
         summary_layout.setSpacing(10)
 
         summary_title = QLabel("Сводка запуска")
-        summary_title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1f2937;")
+        summary_title.setStyleSheet(
+            "font-size: 15px; font-weight: 600; color: #1f2937;"
+        )
         summary_layout.addWidget(summary_title)
 
         self.summary_box = QPlainTextEdit()
@@ -795,6 +807,7 @@ class IMCSQtMainWindow(QMainWindow):
         run_layout.addWidget(summary_card, 0)
         self.view_stack.addWidget(run_page)
 
+        # page 1 — analytics
         analytics_page = QWidget()
         analytics_layout = QVBoxLayout(analytics_page)
         analytics_layout.setContentsMargins(0, 0, 0, 0)
@@ -809,7 +822,9 @@ class IMCSQtMainWindow(QMainWindow):
         analytics_header = QHBoxLayout()
         analytics_header.setSpacing(10)
         analytics_title = QLabel("Аналитика запуска")
-        analytics_title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1f2937;")
+        analytics_title.setStyleSheet(
+            "font-size: 15px; font-weight: 600; color: #1f2937;"
+        )
         self.btn_refresh_analytics = QPushButton("Пересчитать")
         self.btn_refresh_analytics.clicked.connect(self._start_analytics_processing)
         self.btn_refresh_analytics.setEnabled(False)
@@ -823,25 +838,32 @@ class IMCSQtMainWindow(QMainWindow):
         analytics_header.addWidget(self.btn_export_analytics)
         analytics_card_layout.addLayout(analytics_header)
 
-        self.analytics_canvas = AnalyticsCanvas()
+        # Создаём начальный empty canvas и scroll
+        self.analytics_canvas = _build_empty_analytics_canvas()
         self.analytics_scroll = QScrollArea()
         self.analytics_scroll.setWidgetResizable(True)
         self.analytics_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.analytics_scroll.setWidget(self.analytics_canvas)
         analytics_card_layout.addWidget(self.analytics_scroll, 1)
+
         analytics_layout.addWidget(analytics_card, 1)
         self.view_stack.addWidget(analytics_page)
 
         root.addWidget(self.view_stack, 1)
 
+        # --- settings dock ---
         self.settings_dock = QDockWidget("Настройки стенда", self)
         self.settings_dock.setFeatures(QDockWidget.DockWidgetClosable)
-        self.settings_dock.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.settings_dock.setAllowedAreas(
+            Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea
+        )
         self.settings_dock.setMinimumWidth(400)
         self.settings_dock.setMaximumWidth(560)
         self.addDockWidget(Qt.RightDockWidgetArea, self.settings_dock)
         self.settings_dock.setTitleBarWidget(QWidget())
-        self.settings_dock.visibilityChanged.connect(self._on_settings_visibility_changed)
+        self.settings_dock.visibilityChanged.connect(
+            self._on_settings_visibility_changed
+        )
         self.resizeDocks([self.settings_dock], [500], Qt.Horizontal)
 
         scroll = QScrollArea()
@@ -866,6 +888,7 @@ class IMCSQtMainWindow(QMainWindow):
         status.showMessage("Готово к работе.")
         self.setStatusBar(status)
 
+    # -- settings groups -----------------------------------------------------
     def _build_compression_group(self) -> QGroupBox:
         group = QGroupBox("Сжатие и блоки")
         layout = QFormLayout(group)
@@ -949,7 +972,9 @@ class IMCSQtMainWindow(QMainWindow):
         self.color_combo.addItem("gray", "gray")
         self.color_combo.addItem("rgb", "rgb")
         self.color_combo.addItem("ycbcr", "ycbcr")
-        self.color_combo.setCurrentIndex(2 if DEFAULT_COLOR_MODE == "ycbcr" else 0)
+        self.color_combo.setCurrentIndex(
+            2 if DEFAULT_COLOR_MODE == "ycbcr" else 0
+        )
         self.color_combo.currentIndexChanged.connect(self._sync_mode_controls)
         self.color_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
 
@@ -1010,6 +1035,21 @@ class IMCSQtMainWindow(QMainWindow):
         layout.addLayout(row)
         return group
 
+    # -- canvas swap ---------------------------------------------------------
+    def _swap_analytics_canvas(self, new_canvas: AnalyticsCanvas) -> None:
+        """Удалить старый canvas из QScrollArea, поставить новый."""
+        old = self.analytics_canvas
+        self.analytics_canvas = new_canvas
+        self.analytics_scroll.setWidget(new_canvas)
+        # Закрыть matplotlib figure старого canvas чтобы не утекала память
+        if old is not None:
+            try:
+                import matplotlib.pyplot as plt
+                plt.close(old.figure)
+            except Exception:
+                pass
+
+    # -- dock / settings -----------------------------------------------------
     def _toggle_settings(self, visible: bool) -> None:
         self.settings_dock.setVisible(visible)
 
@@ -1019,12 +1059,14 @@ class IMCSQtMainWindow(QMainWindow):
         self.btn_settings.setText("Настройки ›" if visible else "Настройки ‹")
         self.btn_settings.blockSignals(False)
 
+    # -- file selection ------------------------------------------------------
     def _choose_file(self) -> None:
         chosen, _ = QFileDialog.getOpenFileName(
             self,
             "Выберите изображение или сигнал",
             str(INPUT_DIR),
-            "Изображения и сигналы (*.png *.jpg *.jpeg *.bmp *.tiff *.npy *.txt);;Все файлы (*.*)",
+            "Изображения и сигналы (*.png *.jpg *.jpeg *.bmp *.tiff *.npy *.txt);;"
+            "Все файлы (*.*)",
         )
         if not chosen:
             self.statusBar().showMessage("Выбор файла отменён.")
@@ -1035,7 +1077,9 @@ class IMCSQtMainWindow(QMainWindow):
         self._set_view("run")
         self.preview.show_input_path(self.selected_path)
         self._sync_mode_controls()
-        self._reset_analytics_state("Аналитика будет построена после запуска IMCS.")
+        self._reset_analytics_state(
+            "Аналитика будет построена после запуска IMCS."
+        )
         self.statusBar().showMessage(f"Предпросмотр: {self.selected_path.name}")
 
     def _choose_output_dir(self) -> None:
@@ -1069,17 +1113,22 @@ class IMCSQtMainWindow(QMainWindow):
             self.file_label.setText(path.name)
 
         self.color_combo.setEnabled(not is_signal)
-        self.chroma_spin.setEnabled(not is_signal and self.color_combo.currentData() == "ycbcr")
+        self.chroma_spin.setEnabled(
+            not is_signal and self.color_combo.currentData() == "ycbcr"
+        )
         self.block_combo.setEnabled(not is_signal)
         self.measurement_combo.setEnabled(not is_signal)
         self.parallel_combo.setEnabled(self.parallel_check.isChecked())
 
+    # -- task building -------------------------------------------------------
     def _build_task(self) -> Optional[dict]:
         if self.selected_path is None:
             QMessageBox.warning(self, "IMCS", "Сначала выберите файл.")
             return None
 
-        output_dir = Path(self.output_dir_edit.text().strip() or str(OUTPUT_DIR))
+        output_dir = Path(
+            self.output_dir_edit.text().strip() or str(OUTPUT_DIR)
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
 
         algorithm = str(self.algorithm_combo.currentData())
@@ -1130,17 +1179,23 @@ class IMCSQtMainWindow(QMainWindow):
         QMessageBox.warning(self, "IMCS", "Неподдерживаемый формат файла.")
         return None
 
+    # -- running state -------------------------------------------------------
     def _set_running_state(self, is_running: bool) -> None:
         self.btn_run.setEnabled(not is_running)
         self.btn_choose.setEnabled(not is_running)
         self.btn_output_dir.setEnabled(not is_running)
         self.btn_stop.setEnabled(is_running)
-        self.btn_view_toggle.setEnabled((not is_running) and self.last_result is not None)
+        self.btn_view_toggle.setEnabled(
+            (not is_running) and self.last_result is not None
+        )
         self.btn_export_analytics.setEnabled(
             (not is_running) and self.analytics_payload is not None
         )
-        self.btn_refresh_analytics.setEnabled((not is_running) and self.last_result is not None)
+        self.btn_refresh_analytics.setEnabled(
+            (not is_running) and self.last_result is not None
+        )
 
+    # -- processing ----------------------------------------------------------
     def _start_processing(self) -> None:
         if self.worker_process is not None and self.worker_process.is_alive():
             QMessageBox.information(self, "IMCS", "Обработка уже выполняется.")
@@ -1152,14 +1207,18 @@ class IMCSQtMainWindow(QMainWindow):
 
         self.last_result = None
         self._set_view("run")
-        self._reset_analytics_state("Аналитика обновится после завершения нового запуска.")
+        self._reset_analytics_state(
+            "Аналитика обновится после завершения нового запуска."
+        )
         self._summary_log_started = True
         self.summary_box.setPlainText("Запуск обработки…\n")
         self.statusBar().showMessage("IMCS: выполняется обработка…")
         self.active_task = task
         ctx = mp.get_context("spawn")
         self.worker_queue = ctx.Queue()
-        self.worker_process = ctx.Process(target=_run_processing_task, args=(task, self.worker_queue))
+        self.worker_process = ctx.Process(
+            target=_run_processing_task, args=(task, self.worker_queue)
+        )
         self.worker_process.start()
         self._set_running_state(True)
         self.poll_timer.start()
@@ -1188,46 +1247,65 @@ class IMCSQtMainWindow(QMainWindow):
                 pass
             self.analytics_queue = None
 
+    # -- view switching ------------------------------------------------------
     def _set_view(self, name: str) -> None:
         is_analytics = name == "analytics"
         self.view_stack.setCurrentIndex(1 if is_analytics else 0)
-        self.btn_view_toggle.setText("Запуск" if is_analytics else "Аналитика")
+        self.btn_view_toggle.setText(
+            "Запуск" if is_analytics else "Аналитика"
+        )
 
     def _toggle_view(self) -> None:
         if self.view_stack.currentIndex() == 0:
             if self.last_result is None:
-                QMessageBox.information(self, "IMCS", "Сначала выполните запуск IMCS.")
+                QMessageBox.information(
+                    self, "IMCS", "Сначала выполните запуск IMCS."
+                )
                 return
             self._set_view("analytics")
             if self.analytics_payload is None and (
-                self.analytics_process is None or not self.analytics_process.is_alive()
+                self.analytics_process is None
+                or not self.analytics_process.is_alive()
             ):
                 self._start_analytics_processing()
             return
         self._set_view("run")
 
+    # -- analytics -----------------------------------------------------------
     def _reset_analytics_state(self, message: str) -> None:
         self.analytics_poll_timer.stop()
-        if self.analytics_process is not None and self.analytics_process.is_alive():
+        if (
+            self.analytics_process is not None
+            and self.analytics_process.is_alive()
+        ):
             self.analytics_process.terminate()
             self.analytics_process.join(timeout=1.0)
         self._cleanup_analytics_worker()
         self.analytics_payload = None
-        self.analytics_canvas.show_empty(message)
+
+        # Создаём свежий empty canvas с нужным сообщением
+        canvas = _build_empty_analytics_canvas(message)
+        self._swap_analytics_canvas(canvas)
+
         self.btn_export_analytics.setEnabled(False)
         self.btn_refresh_analytics.setEnabled(self.last_result is not None)
         self.btn_view_toggle.setEnabled(self.last_result is not None)
 
     def _start_analytics_processing(self) -> None:
         if self.last_result is None:
-            QMessageBox.information(self, "IMCS", "Нет результата для аналитики.")
+            QMessageBox.information(
+                self, "IMCS", "Нет результата для аналитики."
+            )
             return
         self._reset_analytics_state("Рассчитываются графики аналитики...")
-        self.analytics_canvas.show_loading()
+        # Показать loading canvas
+        self._swap_analytics_canvas(_build_loading_analytics_canvas())
         ctx = mp.get_context("spawn")
         self.analytics_queue = ctx.Queue()
         task = {"result": self.last_result}
-        self.analytics_process = ctx.Process(target=_run_analytics_task, args=(task, self.analytics_queue))
+        self.analytics_process = ctx.Process(
+            target=_run_analytics_task, args=(task, self.analytics_queue)
+        )
         self.analytics_process.start()
         self.analytics_poll_timer.start()
 
@@ -1242,6 +1320,7 @@ class IMCSQtMainWindow(QMainWindow):
         self.statusBar().showMessage("Обработка остановлена.")
         self.summary_box.setPlainText("Обработка остановлена пользователем.")
 
+    # -- polling -------------------------------------------------------------
     def _poll_analytics_worker(self) -> None:
         if self.analytics_queue is None:
             return
@@ -1253,13 +1332,17 @@ class IMCSQtMainWindow(QMainWindow):
         self.analytics_poll_timer.stop()
         if message["status"] == "error":
             self._cleanup_analytics_worker()
-            self.analytics_canvas.show_empty(message["message"])
+            self._reset_analytics_state(message["message"])
             self.statusBar().showMessage("Ошибка построения аналитики.")
             return
 
         self.analytics_payload = message["payload"]
         self._cleanup_analytics_worker()
-        self.analytics_canvas.show_payload(self.analytics_payload)
+
+        # Создаём НОВЫЙ canvas с правильным размером
+        new_canvas = _build_payload_analytics_canvas(self.analytics_payload)
+        self._swap_analytics_canvas(new_canvas)
+
         self.btn_export_analytics.setEnabled(True)
         self.btn_refresh_analytics.setEnabled(True)
         self.btn_view_toggle.setEnabled(True)
@@ -1319,6 +1402,7 @@ class IMCSQtMainWindow(QMainWindow):
             f"workers {requested_workers} | {result.output_subdir}"
         )
 
+    # -- summary formatting --------------------------------------------------
     def _format_summary(self, task_type: str, result) -> str:
         metrics = getattr(result, "metrics", {})
         lines = [
@@ -1347,7 +1431,11 @@ class IMCSQtMainWindow(QMainWindow):
             block_size = result.block_size
             lines.append(
                 "Размер блока: "
-                + (f"{block_size[0]}×{block_size[1]}" if block_size else "полный кадр")
+                + (
+                    f"{block_size[0]}×{block_size[1]}"
+                    if block_size
+                    else "полный кадр"
+                )
             )
         if hasattr(result, "color_mode"):
             lines.append(f"Color mode: {result.color_mode}")
@@ -1377,9 +1465,12 @@ class IMCSQtMainWindow(QMainWindow):
         scrollbar = self.summary_box.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
+    # -- export --------------------------------------------------------------
     def _export_analytics_png(self) -> None:
         if self.last_result is None or self.analytics_payload is None:
-            QMessageBox.information(self, "IMCS", "Сначала дождитесь построения аналитики.")
+            QMessageBox.information(
+                self, "IMCS", "Сначала дождитесь построения аналитики."
+            )
             return
         default_dir = Path(self.last_result.output_subdir) / "analytics_exports"
         chosen = QFileDialog.getExistingDirectory(
@@ -1391,15 +1482,21 @@ class IMCSQtMainWindow(QMainWindow):
             self.statusBar().showMessage("Экспорт аналитики отменён.")
             return
         output_dir = Path(chosen)
-        exported = self.analytics_canvas.export_panels(output_dir, self.analytics_payload)
+        exported = self.analytics_canvas.export_panels(
+            output_dir, self.analytics_payload
+        )
         self.statusBar().showMessage(
             f"Аналитика сохранена: {len(exported)} PNG в {output_dir}"
         )
 
+    # -- close ---------------------------------------------------------------
     def closeEvent(self, event) -> None:  # noqa: N802
         if self.worker_process is not None and self.worker_process.is_alive():
             self._stop_processing()
-        if self.analytics_process is not None and self.analytics_process.is_alive():
+        if (
+            self.analytics_process is not None
+            and self.analytics_process.is_alive()
+        ):
             self.analytics_poll_timer.stop()
             self.analytics_process.terminate()
             self.analytics_process.join(timeout=1.0)

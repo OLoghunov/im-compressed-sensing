@@ -25,7 +25,10 @@ from imcs.cli import (
     save_signal,
     visualize_signal_comparison,
 )
-from imcs.convergence import create_representative_block_convergence_plot
+from imcs.convergence import (
+    clear_previous_convergence_plots,
+    create_representative_block_convergence_plot,
+)
 from imcs.utils import calculate_compression_metrics
 
 # Значения по умолчанию (не нужно помнить флаги CLI)
@@ -607,6 +610,7 @@ def run_image(
 
     if visualize_convergence:
         log("Создание визуализации сходимости по репрезентативному блоку...")
+        clear_previous_convergence_plots(output_subdir)
         create_representative_block_convergence_plot(
             original,
             reconstructed,
@@ -781,6 +785,7 @@ def run_color_image(
         )
     if visualize_convergence:
         log("Создание визуализаций сходимости по репрезентативным блокам каналов...")
+        clear_previous_convergence_plots(output_subdir)
         working_original = original if color_mode == "rgb" else _rgb_to_ycbcr(original)
         working_reconstructed = reconstructed if color_mode == "rgb" else _rgb_to_ycbcr(reconstructed)
         for idx, label in enumerate(channel_labels):

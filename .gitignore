@@ -89,6 +89,7 @@ benchmarks/results/
 *.jpeg
 *.bmp
 *.gif
+*.txt
 
 # Temporary files
 *.tmp
