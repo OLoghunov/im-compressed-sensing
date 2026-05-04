@@ -1,0 +1,57 @@
+{
+  "dataset": "internal",
+  "repeats": 1,
+  "codec_specs": [
+    {
+      "name": "jpeg",
+      "label": "JPEG",
+      "param_name": "quality",
+      "param_values": [
+        40.0,
+        70.0
+      ],
+      "pil_format": "JPEG"
+    }
+  ],
+  "jpeg_qualities": [
+    40,
+    70
+  ],
+  "imcs_ratios": [
+    0.04,
+    0.08
+  ],
+  "imcs_variants": [
+    {
+      "variant_id": "imcs_omp_dct_shared_b8",
+      "label": "IMCS OMP DCT shared",
+      "block_edge": 8,
+      "algorithm": "omp",
+      "basis": "dct",
+      "matrix_type": "gaussian",
+      "measurement_mode": "shared",
+      "color_mode": "gray",
+      "chroma_ratio_scale": 0.5
+    }
+  ],
+  "use_color": false,
+  "force_full_frame": false,
+  "cases": [
+    {
+      "key": "smooth_gradient",
+      "path": "/Users/oylogunov/imcs/examples/input/02_gradient_h.png"
+    },
+    {
+      "key": "edge_rich_cross",
+      "path": "/Users/oylogunov/imcs/examples/input/10_cross.png"
+    },
+    {
+      "key": "textured_random",
+      "path": "/Users/oylogunov/imcs/examples/input/18_texture_random_32x32.png"
+    },
+    {
+      "key": "large_radial",
+      "path": "/Users/oylogunov/imcs/examples/input/20_radial_gradient_128x128.png"
+    }
+  ]
+}

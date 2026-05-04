@@ -41,13 +41,8 @@ def build_analytics_payload(result: Any) -> AnalyticsPayload:
     color_mode = str(getattr(result, "color_mode", "gray"))
     original = np.asarray(result.original, dtype=np.float64)
     reconstructed = np.asarray(result.reconstructed, dtype=np.float64)
-    algo_raw = getattr(result, "algorithm", None)
-    algo_for_plots = (
-        str(algo_raw).strip().lower() if isinstance(algo_raw, str) and str(algo_raw).strip() else None
-    )
     convergence_images, convergence_titles = _load_convergence_images(
-        getattr(result, "output_subdir", None),
-        algo_for_plots,
+        getattr(result, "output_subdir", None)
     )
     working_original, working_reconstructed, basis_source_label = _select_analysis_arrays(
         original, reconstructed, color_mode
@@ -179,30 +174,16 @@ def _build_image_payload(
     )
 
 
-def _convergence_path_matches_algorithm(path: Path, algorithm: str) -> bool:
-    """Keep only plots for the current run; stale convergence_*.png from other algorithms stay on disk."""
-    algo = algorithm.lower()
-    stem = path.stem
-    prefix = f"convergence_{algo}"
-    return stem == prefix or stem.startswith(prefix + "_")
-
-
-def _load_convergence_images(
-    output_subdir: Any, algorithm: str | None = None
-) -> tuple[list[np.ndarray], list[str]]:
+def _load_convergence_images(output_subdir: Any) -> tuple[list[np.ndarray], list[str]]:
     if output_subdir is None:
         return [], []
     output_path = Path(output_subdir)
     if not output_path.exists():
         return [], []
 
-    paths = sorted(output_path.glob("convergence_*.png"))
-    if algorithm:
-        paths = [p for p in paths if _convergence_path_matches_algorithm(p, str(algorithm))]
-
     images: list[np.ndarray] = []
     titles: list[str] = []
-    for path in paths:
+    for path in sorted(output_path.glob("convergence_*.png")):
         try:
             image = np.array(Image.open(path).convert("RGB"), dtype=np.uint8)
         except Exception:

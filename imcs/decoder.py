@@ -13,6 +13,15 @@ from .utils import (
     IMCS_HEADER_V1_SIZE,
     IMCS_HEADER_V2_EXT_FMT,
     IMCS_HEADER_V2_SIZE,
+    IMCS_HEADER_V3_EXT_FMT,
+    IMCS_HEADER_V3_SIZE,
+    IMCS_FLAG_BLOCK_MEAN,
+    IMCS_FLAG_IS_2D,
+    IMCS_FLAG_LOW_FREQUENCY,
+    IMCS_FLAG_PER_BLOCK,
+    IMCS_QUANT_FLOAT64,
+    IMCS_QUANT_INT16,
+    IMCS_QUANT_INT8,
     generate_measurement_matrix,
     omp,
     ista,
@@ -20,6 +29,8 @@ from .utils import (
     simulated_annealing,
     create_basis_matrix,
     create_2d_basis_matrix,
+    idct2,
+    zigzag_indices,
 )
 
 
@@ -119,6 +130,13 @@ def _decode_block_chunk(task: dict) -> tuple[int, np.ndarray, dict[str, float | 
     max_iter = int(task["max_iter"])
     adaptive_lambda = float(task["adaptive_lambda"])
     sparsity = int(task["sparsity"])
+    block_means = task.get("block_means")
+    if block_means is not None:
+        block_means = np.asarray(block_means, dtype=np.float64)
+    low_frequency_coefficients = task.get("low_frequency_coefficients")
+    if low_frequency_coefficients is not None:
+        low_frequency_coefficients = np.asarray(low_frequency_coefficients, dtype=np.float64)
+    low_frequency_positions = zigzag_indices(bh, bw)[: int(task.get("low_frequency_count", 0))]
 
     profile = _empty_decode_profile()
 
@@ -168,7 +186,15 @@ def _decode_block_chunk(task: dict) -> tuple[int, np.ndarray, dict[str, float | 
 
         t0 = time.perf_counter()
         x_vec = Psi_2d.T @ s
-        blocks[offset] = x_vec.reshape(bh, bw, order="F")
+        block = x_vec.reshape(bh, bw, order="F")
+        if low_frequency_coefficients is not None and low_frequency_positions:
+            coeff_matrix = np.zeros((bh, bw), dtype=np.float64)
+            for pos, value in zip(low_frequency_positions, low_frequency_coefficients[offset]):
+                coeff_matrix[pos] = value
+            block = block + idct2(coeff_matrix)
+        if block_means is not None:
+            block = block + float(block_means[offset])
+        blocks[offset] = block
         profile["inverse_transform_s"] = float(profile["inverse_transform_s"]) + (
             time.perf_counter() - t0
         )
@@ -353,7 +379,7 @@ class IMCSDecoder:
         ) = header
 
         header_total = IMCS_HEADER_V1_SIZE
-        is_2d = bool(flags & 1)
+        is_2d = bool(flags & IMCS_FLAG_IS_2D)
 
         if version >= 2 and len(data) >= IMCS_HEADER_V2_SIZE:
             block_h, block_w, content_h, content_w = struct.unpack(
@@ -367,16 +393,42 @@ class IMCSDecoder:
             else:
                 content_h, content_w = orig_height, 0
 
+        quantization_id = IMCS_QUANT_FLOAT64
+        quantization_scale = 1.0
+        quantization_offset = 0.0
+        if version >= 3 and len(data) >= IMCS_HEADER_V3_SIZE:
+            (
+                quantization_id,
+                low_frequency_count,
+                _reserved,
+                quantization_scale,
+                quantization_offset,
+            ) = struct.unpack(
+                IMCS_HEADER_V3_EXT_FMT, data[IMCS_HEADER_V2_SIZE:IMCS_HEADER_V3_SIZE]
+            )
+            header_total = IMCS_HEADER_V3_SIZE
+        else:
+            low_frequency_count = 0
+
         # Map IDs back to strings
         basis_map = {0: "dct", 1: "wavelet"}
         matrix_map = {0: "gaussian", 1: "bernoulli", 2: "random"}
+        quantization_map = {
+            IMCS_QUANT_FLOAT64: "float64",
+            IMCS_QUANT_INT8: "int8",
+            IMCS_QUANT_INT16: "int16",
+        }
 
         metadata = {
             "version": version,
             "is_2d": is_2d,
             "sparsity_basis": basis_map.get(basis_id, "dct"),
             "matrix_type": matrix_map.get(matrix_id, "gaussian"),
-            "measurement_mode": "per_block" if (flags & 0b10) else "shared",
+            "measurement_mode": "per_block" if (flags & IMCS_FLAG_PER_BLOCK) else "shared",
+            "block_mean_residual": bool(flags & IMCS_FLAG_BLOCK_MEAN),
+            "low_frequency_coeffs": int(low_frequency_count)
+            if (flags & IMCS_FLAG_LOW_FREQUENCY)
+            else 0,
             "seed": seed,
             "original_shape": (orig_height, orig_width) if is_2d else (orig_height,),
             "m_row": m_row,
@@ -384,11 +436,67 @@ class IMCSDecoder:
             "block_h": block_h,
             "block_w": block_w,
             "content_shape": (content_h, content_w) if is_2d else (content_h,),
+            "quantization": quantization_map.get(quantization_id, "float64"),
+            "quantization_id": int(quantization_id),
+            "quantization_scale": float(quantization_scale),
+            "quantization_offset": float(quantization_offset),
+            "data_length": int(data_length),
         }
 
         # Extract measurements
-        measurements_bytes = data[header_total : header_total + data_length]
-        measurements = np.frombuffer(measurements_bytes, dtype=np.float64)
+        payload = data[header_total : header_total + data_length]
+        cursor = 0
+        low_frequency_coefficients = None
+        low_frequency_count = int(metadata["low_frequency_coeffs"])
+        if low_frequency_count:
+            if m_col <= 0:
+                raise ValueError("Low-frequency payload requires blocked 2D data")
+            if len(payload) < 8 + m_col * low_frequency_count:
+                raise ValueError("Invalid IMCS data: low-frequency payload is incomplete")
+            low_frequency_scale = struct.unpack("<d", payload[:8])[0]
+            cursor = 8
+            coeff_count = m_col * low_frequency_count
+            low_frequency_q = np.frombuffer(
+                payload[cursor : cursor + coeff_count], dtype=np.int8
+            ).astype(np.float64)
+            low_frequency_coefficients = (
+                low_frequency_q.reshape(m_col, low_frequency_count) * float(low_frequency_scale)
+            )
+            cursor += coeff_count
+            metadata["low_frequency_scale"] = float(low_frequency_scale)
+            metadata["low_frequency_bytes"] = 8 + coeff_count
+        else:
+            metadata["low_frequency_scale"] = 1.0
+            metadata["low_frequency_bytes"] = 0
+
+        block_means = None
+        if metadata["block_mean_residual"]:
+            if m_col <= 0:
+                raise ValueError("Block mean residual payload requires blocked 2D data")
+            if len(payload) < cursor + m_col:
+                raise ValueError("Invalid IMCS data: block mean payload is incomplete")
+            block_means = np.frombuffer(payload[cursor : cursor + m_col], dtype=np.uint8).astype(
+                np.float64
+            )
+            cursor += m_col
+            measurements_bytes = payload[cursor:]
+            metadata["block_mean_bytes"] = m_col
+        else:
+            measurements_bytes = payload[cursor:]
+            metadata["block_mean_bytes"] = 0
+        metadata["measurement_data_length"] = len(measurements_bytes)
+        metadata["block_means"] = block_means
+        metadata["low_frequency_coefficients"] = low_frequency_coefficients
+        if quantization_id == IMCS_QUANT_FLOAT64:
+            measurements = np.frombuffer(measurements_bytes, dtype=np.float64).astype(np.float64)
+        elif quantization_id == IMCS_QUANT_INT8:
+            q = np.frombuffer(measurements_bytes, dtype=np.int8).astype(np.float64)
+            measurements = q * float(quantization_scale) + float(quantization_offset)
+        elif quantization_id == IMCS_QUANT_INT16:
+            q = np.frombuffer(measurements_bytes, dtype=np.int16).astype(np.float64)
+            measurements = q * float(quantization_scale) + float(quantization_offset)
+        else:
+            raise ValueError(f"Unsupported IMCS quantization id: {quantization_id}")
 
         return metadata, measurements
 
@@ -515,6 +623,9 @@ class IMCSDecoder:
 
         X_pad = np.zeros((pad_h, pad_w), dtype=np.float64)
         y_blocks = y.reshape(n_blocks, m_per_block)
+        block_means = metadata.get("block_means")
+        low_frequency_coefficients = metadata.get("low_frequency_coefficients")
+        low_frequency_count = int(metadata.get("low_frequency_coeffs", 0))
 
         workers = self._resolve_parallel_workers(n_blocks)
         self._set_profile_value("parallel_workers", workers)
@@ -533,6 +644,13 @@ class IMCSDecoder:
                     {
                         "start_idx": start_idx,
                         "y_chunk": y_blocks[start_idx:stop_idx],
+                        "block_means": None
+                        if block_means is None
+                        else block_means[start_idx:stop_idx],
+                        "low_frequency_coefficients": None
+                        if low_frequency_coefficients is None
+                        else low_frequency_coefficients[start_idx:stop_idx],
+                        "low_frequency_count": low_frequency_count,
                         "bh": bh,
                         "bw": bw,
                         "m_per_block": m_per_block,
@@ -578,6 +696,7 @@ class IMCSDecoder:
             t0 = time.perf_counter()
             Psi_2d = create_2d_basis_matrix(bh, bw, metadata["sparsity_basis"])
             self._record_profile("basis_build_s", time.perf_counter() - t0)
+            low_frequency_positions = zigzag_indices(bh, bw)[:low_frequency_count]
             shared_A: Optional[np.ndarray] = None
             if measurement_mode == "shared":
                 self._log("[decode-2d-blocked] building shared Phi...")
@@ -626,6 +745,13 @@ class IMCSDecoder:
                     t0 = time.perf_counter()
                     x_vec = Psi_2d.T @ s
                     block = x_vec.reshape(bh, bw, order="F")
+                    if low_frequency_coefficients is not None and low_frequency_positions:
+                        coeff_matrix = np.zeros((bh, bw), dtype=np.float64)
+                        for pos, value in zip(low_frequency_positions, low_frequency_coefficients[idx]):
+                            coeff_matrix[pos] = value
+                        block = block + idct2(coeff_matrix)
+                    if block_means is not None:
+                        block = block + float(block_means[idx])
                     self._record_profile("inverse_transform_s", time.perf_counter() - t0)
                     t0 = time.perf_counter()
                     X_pad[bi * bh : (bi + 1) * bh, bj * bw : (bj + 1) * bw] = block
@@ -686,7 +812,7 @@ class IMCSDecoder:
         else:
             original_size = np.prod(metadata["original_shape"]) * 8  # float64
 
-        compressed_size = measurements.size * 8
+        compressed_size = int(metadata.get("data_length", measurements.size * 8))
 
         return {
             **metadata,

@@ -1,0 +1,9 @@
+dataset,case_key,input_file,width,height,channels,method,method_family,variant_id,variant_label,repeat_index,param_name,param_value,bpp,psnr_db,ssim,mae,encode_time_s,decode_time_s,compressed_size_bytes,imcs_block_size,imcs_algorithm,imcs_basis,imcs_matrix_type,imcs_measurement_mode,imcs_color_mode,imcs_chroma_ratio_scale
+internal,smooth_gradient,02_gradient_h.png,16,16,1,jpeg,baseline,jpeg,JPEG,0,quality,70.0,10.9375,46.0206,0.997912,0.75,3.3e-05,4.6e-05,350,,,,,,,
+internal,smooth_gradient,02_gradient_h.png,16,16,1,imcs,imcs,imcs_omp_dct_shared_b8,IMCS OMP DCT shared,0,compression_ratio,0.08,6.25,2.69848,9.4e-05,126.728799,0.000173,0.000446,200,8,omp,dct,gaussian,shared,gray,
+internal,edge_rich_cross,10_cross.png,16,16,1,jpeg,baseline,jpeg,JPEG,0,quality,70.0,12.0,33.007756,0.970563,2.722656,2.3e-05,3.3e-05,384,,,,,,,
+internal,edge_rich_cross,10_cross.png,16,16,1,imcs,imcs,imcs_omp_dct_shared_b8,IMCS OMP DCT shared,0,compression_ratio,0.08,6.25,5.781064,0.000371,78.133357,9.2e-05,0.000313,200,8,omp,dct,gaussian,shared,gray,
+internal,textured_random,18_texture_random_32x32.png,32,32,1,jpeg,baseline,jpeg,JPEG,0,quality,70.0,5.898438,26.968493,0.983084,7.063477,2.4e-05,3.4e-05,755,,,,,,,
+internal,textured_random,18_texture_random_32x32.png,32,32,1,imcs,imcs,imcs_omp_dct_shared_b8,IMCS OMP DCT shared,0,compression_ratio,0.08,5.3125,2.21739,-8.9e-05,132.125239,0.000228,0.001333,680,8,omp,dct,gaussian,shared,gray,
+internal,large_radial,20_radial_gradient_128x128.png,128,128,1,jpeg,baseline,jpeg,JPEG,0,quality,70.0,0.929199,44.145828,0.989122,1.010864,7.5e-05,8.3e-05,1903,,,,,,,
+internal,large_radial,20_radial_gradient_128x128.png,128,128,1,imcs,imcs,imcs_omp_dct_shared_b8,IMCS OMP DCT shared,0,compression_ratio,0.08,5.019531,5.335079,0.074749,89.559427,0.003011,0.009189,10280,8,omp,dct,gaussian,shared,gray,

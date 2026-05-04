@@ -1,0 +1,37 @@
+{
+  "dataset": "internal",
+  "jpeg_qualities": [
+    40,
+    70
+  ],
+  "imcs_ratios": [
+    0.3,
+    0.5
+  ],
+  "block_edge": 8,
+  "algorithm": "omp",
+  "basis": "dct",
+  "matrix_type": "gaussian",
+  "measurement_mode": "shared",
+  "use_color": false,
+  "color_mode": null,
+  "chroma_ratio_scale": null,
+  "cases": [
+    {
+      "key": "smooth_gradient",
+      "path": "/Users/oylogunov/imcs/examples/input/02_gradient_h.png"
+    },
+    {
+      "key": "edge_rich_cross",
+      "path": "/Users/oylogunov/imcs/examples/input/10_cross.png"
+    },
+    {
+      "key": "textured_random",
+      "path": "/Users/oylogunov/imcs/examples/input/18_texture_random_32x32.png"
+    },
+    {
+      "key": "large_radial",
+      "path": "/Users/oylogunov/imcs/examples/input/20_radial_gradient_128x128.png"
+    }
+  ]
+}

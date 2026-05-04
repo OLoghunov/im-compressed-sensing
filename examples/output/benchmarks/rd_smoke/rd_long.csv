@@ -1,0 +1,17 @@
+dataset,case_key,input_file,width,height,channels,method,param_name,param_value,bpp,psnr_db,ssim,mae,encode_time_s,decode_time_s,compressed_size_bytes,imcs_block_size,imcs_algorithm,imcs_basis,imcs_matrix_type,imcs_measurement_mode,imcs_color_mode
+internal,smooth_gradient,02_gradient_h.png,16,16,1,jpeg,jpeg_quality,40,10.78125,46.0206,0.997912,0.75,2.1e-05,3.2e-05,345,,,,,,
+internal,smooth_gradient,02_gradient_h.png,16,16,1,jpeg,jpeg_quality,70,10.9375,46.0206,0.997912,0.75,1.6e-05,2.7e-05,350,,,,,,
+internal,smooth_gradient,02_gradient_h.png,16,16,1,imcs,compression_ratio,0.3,20.25,311.257334,1.0,0.0,0.000224,0.000885,648,8,omp,dct,gaussian,shared,gray
+internal,smooth_gradient,02_gradient_h.png,16,16,1,imcs,compression_ratio,0.5,33.25,306.83209,1.0,0.0,0.000134,0.000567,1064,8,omp,dct,gaussian,shared,gray
+internal,edge_rich_cross,10_cross.png,16,16,1,jpeg,jpeg_quality,40,11.5625,28.383688,0.942212,4.957031,1.7e-05,2.7e-05,370,,,,,,
+internal,edge_rich_cross,10_cross.png,16,16,1,jpeg,jpeg_quality,70,12.0,33.007756,0.970563,2.722656,1.6e-05,2.6e-05,384,,,,,,
+internal,edge_rich_cross,10_cross.png,16,16,1,imcs,compression_ratio,0.3,20.25,8.631706,0.423516,44.24868,0.000103,0.000792,648,8,omp,dct,gaussian,shared,gray
+internal,edge_rich_cross,10_cross.png,16,16,1,imcs,compression_ratio,0.5,33.25,25.11763,0.946317,4.283043,0.000121,0.001113,1064,8,omp,dct,gaussian,shared,gray
+internal,textured_random,18_texture_random_32x32.png,32,32,1,jpeg,jpeg_quality,40,4.835938,22.466044,0.954575,12.061523,1.9e-05,3e-05,619,,,,,,
+internal,textured_random,18_texture_random_32x32.png,32,32,1,jpeg,jpeg_quality,70,5.898438,26.968493,0.983084,7.063477,1.9e-05,2.9e-05,755,,,,,,
+internal,textured_random,18_texture_random_32x32.png,32,32,1,imcs,compression_ratio,0.3,19.3125,8.503243,0.352712,55.524016,0.000341,0.003499,2472,8,omp,dct,gaussian,shared,gray
+internal,textured_random,18_texture_random_32x32.png,32,32,1,imcs,compression_ratio,0.5,32.3125,11.25618,0.512233,43.156795,0.000548,0.008526,4136,8,omp,dct,gaussian,shared,gray
+internal,large_radial,20_radial_gradient_128x128.png,128,128,1,jpeg,jpeg_quality,40,0.714355,40.744108,0.979115,1.515503,4.2e-05,5e-05,1463,,,,,,
+internal,large_radial,20_radial_gradient_128x128.png,128,128,1,jpeg,jpeg_quality,70,0.929199,44.145828,0.989122,1.010864,4.2e-05,4.4e-05,1903,,,,,,
+internal,large_radial,20_radial_gradient_128x128.png,128,128,1,imcs,compression_ratio,0.3,19.019531,29.727481,0.920029,3.332424,0.004537,0.050005,38952,8,omp,dct,gaussian,shared,gray
+internal,large_radial,20_radial_gradient_128x128.png,128,128,1,imcs,compression_ratio,0.5,32.019531,43.270233,0.983017,0.995039,0.00537,0.131569,65576,8,omp,dct,gaussian,shared,gray

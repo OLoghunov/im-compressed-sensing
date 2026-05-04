@@ -27,6 +27,12 @@ python run.py
 pip install -r requirements.txt
 ```
 
+Если нужен только современный GUI-слой:
+
+```bash
+pip install PySide6
+```
+
 ### Консоль без GUI (один файл)
 
 ```bash
@@ -120,6 +126,11 @@ print(f"PSNR: {metrics['psnr']:.2f} dB")
 
 ---
 
+## Визуализация сходимости (отдельный сценарий)
+
+Графики сходимости можно строить через `visualization/plot_convergence.py`, если вызывать декодер с `return_history=True` из своего кода. В GUI по умолчанию сходимость не рисуется, чтобы не усложнять окно.
+
+---
 
 ## Benchmarks
 

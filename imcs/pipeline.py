@@ -25,10 +25,7 @@ from imcs.cli import (
     save_signal,
     visualize_signal_comparison,
 )
-from imcs.convergence import (
-    clear_previous_convergence_plots,
-    create_representative_block_convergence_plot,
-)
+from imcs.convergence import create_representative_block_convergence_plot
 from imcs.utils import calculate_compression_metrics
 
 # Значения по умолчанию (не нужно помнить флаги CLI)
@@ -39,6 +36,9 @@ DEFAULT_SEED = 42
 DEFAULT_BASIS = "dct"
 DEFAULT_MATRIX_TYPE = "gaussian"
 DEFAULT_MEASUREMENT_MODE = "shared"
+DEFAULT_MEASUREMENT_DTYPE = "float64"
+DEFAULT_BLOCK_MEAN_RESIDUAL = True
+DEFAULT_LOW_FREQUENCY_COEFFS = 0
 DEFAULT_COLOR_MODE = "ycbcr"
 DEFAULT_CHROMA_RATIO_SCALE = 0.5
 DEFAULT_SEQUENCE_STRATEGY = "independent"
@@ -64,6 +64,9 @@ class ImageRunResult:
     basis: str
     matrix_type: str
     measurement_mode: str
+    measurement_dtype: str
+    block_mean_residual: bool
+    low_frequency_coeffs: int
     block_size: Optional[Tuple[int, int]]
     decode_profile: Optional[dict] = None
 
@@ -83,6 +86,7 @@ class SignalRunResult:
     compression_ratio: float
     basis: str
     matrix_type: str
+    measurement_dtype: str
     decode_profile: Optional[dict] = None
 
 
@@ -101,6 +105,9 @@ class ColorImageRunResult:
     basis: str
     matrix_type: str
     measurement_mode: str
+    measurement_dtype: str
+    block_mean_residual: bool
+    low_frequency_coeffs: int
     color_mode: str
     channel_ratios: tuple[float, float, float]
     decode_profile: Optional[dict] = None
@@ -221,12 +228,14 @@ def encode_signal(
     compression_ratio: float,
     basis: str = DEFAULT_BASIS,
     matrix_type: str = DEFAULT_MATRIX_TYPE,
+    measurement_dtype: str = DEFAULT_MEASUREMENT_DTYPE,
 ) -> tuple[float, bytes]:
     encoder = IMCSEncoder(
         compression_ratio=compression_ratio,
         seed=DEFAULT_SEED,
         sparsity_basis=basis,
         matrix_type=matrix_type,
+        measurement_dtype=measurement_dtype,
     )
     t0 = time.time()
     compressed = encoder.encode(original)
@@ -269,6 +278,9 @@ def encode_image(
     basis: str = DEFAULT_BASIS,
     matrix_type: str = DEFAULT_MATRIX_TYPE,
     measurement_mode: str = DEFAULT_MEASUREMENT_MODE,
+    measurement_dtype: str = DEFAULT_MEASUREMENT_DTYPE,
+    block_mean_residual: bool = DEFAULT_BLOCK_MEAN_RESIDUAL,
+    low_frequency_coeffs: int = DEFAULT_LOW_FREQUENCY_COEFFS,
 ) -> tuple[float, bytes]:
     encoder = IMCSEncoder(
         compression_ratio=compression_ratio,
@@ -277,6 +289,9 @@ def encode_image(
         matrix_type=matrix_type,
         block_size=block_size,
         measurement_mode=measurement_mode,
+        measurement_dtype=measurement_dtype,
+        block_mean_residual=block_mean_residual,
+        low_frequency_coeffs=low_frequency_coeffs,
     )
     t0 = time.time()
     compressed = encoder.encode(original)
@@ -328,6 +343,9 @@ def _process_grayscale_array(
     basis: str,
     matrix_type: str,
     measurement_mode: str,
+    measurement_dtype: str = DEFAULT_MEASUREMENT_DTYPE,
+    block_mean_residual: bool = DEFAULT_BLOCK_MEAN_RESIDUAL,
+    low_frequency_coeffs: int = DEFAULT_LOW_FREQUENCY_COEFFS,
     collect_decode_profile: bool = False,
     parallel_block_workers: Optional[int] = None,
 ) -> tuple[Optional[Tuple[int, int]], float, bytes, float, np.ndarray, IMCSDecoder, dict, str]:
@@ -339,6 +357,9 @@ def _process_grayscale_array(
         basis=basis,
         matrix_type=matrix_type,
         measurement_mode=measurement_mode,
+        measurement_dtype=measurement_dtype,
+        block_mean_residual=block_mean_residual,
+        low_frequency_coeffs=low_frequency_coeffs,
     )
     t_decode, reconstructed, decoder = decode_image(
         compressed,
@@ -363,6 +384,9 @@ def _process_color_array(
     basis: str,
     matrix_type: str,
     measurement_mode: str,
+    measurement_dtype: str,
+    block_mean_residual: bool,
+    low_frequency_coeffs: int,
     color_mode: str,
     chroma_ratio_scale: float,
     collect_decode_profile: bool = False,
@@ -425,6 +449,9 @@ def _process_color_array(
             basis,
             matrix_type,
             measurement_mode,
+            measurement_dtype,
+            block_mean_residual,
+            low_frequency_coeffs,
             collect_decode_profile=collect_decode_profile,
             parallel_block_workers=parallel_block_workers,
         )
@@ -510,6 +537,9 @@ def run_image(
     basis: str = DEFAULT_BASIS,
     matrix_type: str = DEFAULT_MATRIX_TYPE,
     measurement_mode: str = DEFAULT_MEASUREMENT_MODE,
+    measurement_dtype: str = DEFAULT_MEASUREMENT_DTYPE,
+    block_mean_residual: bool = DEFAULT_BLOCK_MEAN_RESIDUAL,
+    low_frequency_coeffs: int = DEFAULT_LOW_FREQUENCY_COEFFS,
     output_name: Optional[str] = None,
     collect_decode_profile: bool = False,
     parallel_block_workers: Optional[int] = None,
@@ -534,7 +564,9 @@ def run_image(
     log(
         "Конфигурация: "
         f"ratio={compression_ratio}, algorithm={algorithm.upper()}, basis={basis}, "
-        f"matrix={matrix_type}, phi={measurement_mode}, requested_workers={requested_workers}"
+        f"matrix={matrix_type}, phi={measurement_mode}, dtype={measurement_dtype}, "
+        f"block_mean={block_mean_residual}, low_freq={low_frequency_coeffs}, "
+        f"requested_workers={requested_workers}"
     )
 
     block_size, t_encode, compressed, t_decode, reconstructed, decoder, metrics, quality = (
@@ -549,6 +581,9 @@ def run_image(
             basis,
             matrix_type,
             measurement_mode,
+            measurement_dtype,
+            block_mean_residual,
+            low_frequency_coeffs,
             collect_decode_profile=collect_decode_profile,
             parallel_block_workers=parallel_block_workers,
         )
@@ -567,7 +602,8 @@ def run_image(
     log(
         "Кодирование "
         f"(compression_ratio={compression_ratio}, блоки: {bs_note}, basis={basis}, "
-        f"matrix={matrix_type}, phi={measurement_mode})..."
+        f"matrix={matrix_type}, phi={measurement_mode}, dtype={measurement_dtype}, "
+        f"block_mean={block_mean_residual}, low_freq={low_frequency_coeffs})..."
     )
     log(f"  ✓ Сжато за {t_encode:.3f} сек")
     log(f"  Размер: {len(compressed)} байт (было {original.nbytes} байт)")
@@ -591,6 +627,9 @@ def run_image(
         "Basis": basis,
         "Matrix type": matrix_type,
         "Measurement mode": measurement_mode,
+        "Measurement dtype": measurement_dtype,
+        "Block mean residual": str(block_mean_residual),
+        "Low-frequency coeffs": str(low_frequency_coeffs),
         "Block size": bs_note,
     }
     _save_image_results(
@@ -610,7 +649,6 @@ def run_image(
 
     if visualize_convergence:
         log("Создание визуализации сходимости по репрезентативному блоку...")
-        clear_previous_convergence_plots(output_subdir)
         create_representative_block_convergence_plot(
             original,
             reconstructed,
@@ -650,6 +688,9 @@ def run_image(
         basis=basis,
         matrix_type=matrix_type,
         measurement_mode=measurement_mode,
+        measurement_dtype=measurement_dtype,
+        block_mean_residual=block_mean_residual,
+        low_frequency_coeffs=low_frequency_coeffs,
         block_size=block_size,
         decode_profile=decoder.last_profile,
     )
@@ -666,6 +707,9 @@ def run_color_image(
     basis: str = DEFAULT_BASIS,
     matrix_type: str = DEFAULT_MATRIX_TYPE,
     measurement_mode: str = DEFAULT_MEASUREMENT_MODE,
+    measurement_dtype: str = DEFAULT_MEASUREMENT_DTYPE,
+    block_mean_residual: bool = DEFAULT_BLOCK_MEAN_RESIDUAL,
+    low_frequency_coeffs: int = DEFAULT_LOW_FREQUENCY_COEFFS,
     color_mode: str = "ycbcr",
     chroma_ratio_scale: float = DEFAULT_CHROMA_RATIO_SCALE,
     output_name: Optional[str] = None,
@@ -692,7 +736,8 @@ def run_color_image(
         "Конфигурация: "
         f"ratio={compression_ratio}, algorithm={algorithm.upper()}, basis={basis}, "
         f"matrix={matrix_type}, phi={measurement_mode}, color_mode={color_mode.upper()}, "
-        f"requested_workers={requested_workers}"
+        f"dtype={measurement_dtype}, block_mean={block_mean_residual}, "
+        f"low_freq={low_frequency_coeffs}, requested_workers={requested_workers}"
     )
     log(
         "Коэффициенты каналов: "
@@ -718,6 +763,9 @@ def run_color_image(
         basis,
         matrix_type,
         measurement_mode,
+        measurement_dtype,
+        block_mean_residual,
+        low_frequency_coeffs,
         color_mode,
         chroma_ratio_scale,
         collect_decode_profile=collect_decode_profile,
@@ -767,6 +815,9 @@ def run_color_image(
             "Basis": basis,
             "Matrix type": matrix_type,
             "Measurement mode": measurement_mode,
+            "Measurement dtype": measurement_dtype,
+            "Block mean residual": str(block_mean_residual),
+            "Low-frequency coeffs": str(low_frequency_coeffs),
             "Channel ratios": ", ".join(f"{ratio:.2f}" for ratio in channel_ratios),
         },
     )
@@ -785,7 +836,6 @@ def run_color_image(
         )
     if visualize_convergence:
         log("Создание визуализаций сходимости по репрезентативным блокам каналов...")
-        clear_previous_convergence_plots(output_subdir)
         working_original = original if color_mode == "rgb" else _rgb_to_ycbcr(original)
         working_reconstructed = reconstructed if color_mode == "rgb" else _rgb_to_ycbcr(reconstructed)
         for idx, label in enumerate(channel_labels):
@@ -821,6 +871,9 @@ def run_color_image(
         basis=basis,
         matrix_type=matrix_type,
         measurement_mode=measurement_mode,
+        measurement_dtype=measurement_dtype,
+        block_mean_residual=block_mean_residual,
+        low_frequency_coeffs=low_frequency_coeffs,
         color_mode=color_mode,
         channel_ratios=channel_ratios,
         decode_profile=decode_profile,
@@ -1067,6 +1120,7 @@ def run_signal(
     verbose: bool = True,
     basis: str = DEFAULT_BASIS,
     matrix_type: str = DEFAULT_MATRIX_TYPE,
+    measurement_dtype: str = DEFAULT_MEASUREMENT_DTYPE,
     collect_decode_profile: bool = False,
     parallel_block_workers: Optional[int] = None,
 ) -> Optional[SignalRunResult]:
@@ -1085,7 +1139,7 @@ def run_signal(
     log(
         "Конфигурация: "
         f"ratio={compression_ratio}, algorithm={algorithm.upper()}, basis={basis}, "
-        f"matrix={matrix_type}, requested_workers={requested_workers}"
+        f"matrix={matrix_type}, dtype={measurement_dtype}, requested_workers={requested_workers}"
     )
 
     log(f"  Размер: {len(original)} отсчётов")
@@ -1097,13 +1151,14 @@ def run_signal(
 
     log(
         f"Кодирование (compression_ratio={compression_ratio}, basis={basis}, "
-        f"matrix={matrix_type})..."
+        f"matrix={matrix_type}, dtype={measurement_dtype})..."
     )
     t_encode, compressed = encode_signal(
         original,
         compression_ratio,
         basis=basis,
         matrix_type=matrix_type,
+        measurement_dtype=measurement_dtype,
     )
     log(f"  ✓ Сжато за {t_encode:.3f} сек")
     log(f"  Размер: {len(compressed)} байт (было {original.nbytes} байт)")
@@ -1163,6 +1218,7 @@ def run_signal(
         extra_fields={
             "Basis": basis,
             "Matrix type": matrix_type,
+            "Measurement dtype": measurement_dtype,
         },
     )
 
@@ -1187,5 +1243,6 @@ def run_signal(
         compression_ratio=compression_ratio,
         basis=basis,
         matrix_type=matrix_type,
+        measurement_dtype=measurement_dtype,
         decode_profile=decoder.last_profile,
     )

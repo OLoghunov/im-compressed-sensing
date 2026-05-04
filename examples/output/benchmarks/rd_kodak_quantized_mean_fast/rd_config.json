@@ -1,0 +1,168 @@
+{
+  "dataset": "kodak",
+  "repeats": 1,
+  "codec_specs": [
+    {
+      "name": "jpeg",
+      "label": "JPEG",
+      "param_name": "quality",
+      "param_values": [
+        50.0,
+        70.0
+      ],
+      "pil_format": "JPEG"
+    }
+  ],
+  "jpeg_qualities": [
+    50,
+    70
+  ],
+  "imcs_ratios": [
+    0.08,
+    0.12,
+    0.16
+  ],
+  "imcs_variants": [
+    {
+      "variant_id": "imcs_omp_dct_shared_mean_float64_b8",
+      "label": "IMCS OMP DCT shared + mean float64",
+      "block_edge": 8,
+      "algorithm": "omp",
+      "basis": "dct",
+      "matrix_type": "gaussian",
+      "measurement_mode": "shared",
+      "measurement_dtype": "float64",
+      "block_mean_residual": true,
+      "color_mode": "gray",
+      "chroma_ratio_scale": 0.5
+    },
+    {
+      "variant_id": "imcs_omp_dct_shared_mean_int16_b8",
+      "label": "IMCS OMP DCT shared + mean int16",
+      "block_edge": 8,
+      "algorithm": "omp",
+      "basis": "dct",
+      "matrix_type": "gaussian",
+      "measurement_mode": "shared",
+      "measurement_dtype": "int16",
+      "block_mean_residual": true,
+      "color_mode": "gray",
+      "chroma_ratio_scale": 0.5
+    },
+    {
+      "variant_id": "imcs_omp_dct_shared_mean_int8_b8",
+      "label": "IMCS OMP DCT shared + mean int8",
+      "block_edge": 8,
+      "algorithm": "omp",
+      "basis": "dct",
+      "matrix_type": "gaussian",
+      "measurement_mode": "shared",
+      "measurement_dtype": "int8",
+      "block_mean_residual": true,
+      "color_mode": "gray",
+      "chroma_ratio_scale": 0.5
+    }
+  ],
+  "use_color": false,
+  "force_full_frame": false,
+  "parallel_block_workers": 8,
+  "clean_output": true,
+  "cases": [
+    {
+      "key": "kodim01",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim01.png"
+    },
+    {
+      "key": "kodim02",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim02.png"
+    },
+    {
+      "key": "kodim03",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim03.png"
+    },
+    {
+      "key": "kodim04",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim04.png"
+    },
+    {
+      "key": "kodim05",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim05.png"
+    },
+    {
+      "key": "kodim06",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim06.png"
+    },
+    {
+      "key": "kodim07",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim07.png"
+    },
+    {
+      "key": "kodim08",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim08.png"
+    },
+    {
+      "key": "kodim09",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim09.png"
+    },
+    {
+      "key": "kodim10",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim10.png"
+    },
+    {
+      "key": "kodim11",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim11.png"
+    },
+    {
+      "key": "kodim12",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim12.png"
+    },
+    {
+      "key": "kodim13",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim13.png"
+    },
+    {
+      "key": "kodim14",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim14.png"
+    },
+    {
+      "key": "kodim15",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim15.png"
+    },
+    {
+      "key": "kodim16",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim16.png"
+    },
+    {
+      "key": "kodim17",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim17.png"
+    },
+    {
+      "key": "kodim18",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim18.png"
+    },
+    {
+      "key": "kodim19",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim19.png"
+    },
+    {
+      "key": "kodim20",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim20.png"
+    },
+    {
+      "key": "kodim21",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim21.png"
+    },
+    {
+      "key": "kodim22",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim22.png"
+    },
+    {
+      "key": "kodim23",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim23.png"
+    },
+    {
+      "key": "kodim24",
+      "path": "/Users/oylogunov/imcs/datasets/kodak/kodim24.png"
+    }
+  ]
+}

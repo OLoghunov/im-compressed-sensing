@@ -1,0 +1,42 @@
+{
+  "codec": "jpeg_pillow",
+  "qualities": [
+    10,
+    20,
+    30,
+    40,
+    50,
+    60,
+    70,
+    80,
+    90,
+    95
+  ],
+  "color_mode": "grayscale",
+  "cases": [
+    {
+      "key": "smooth_gradient",
+      "path": "/Users/oylogunov/imcs/examples/input/02_gradient_h.png",
+      "category": "smooth",
+      "description": "Smooth horizontal gradient"
+    },
+    {
+      "key": "edge_rich_cross",
+      "path": "/Users/oylogunov/imcs/examples/input/10_cross.png",
+      "category": "edge-rich",
+      "description": "Geometric cross with sharp transitions"
+    },
+    {
+      "key": "textured_random",
+      "path": "/Users/oylogunov/imcs/examples/input/18_texture_random_32x32.png",
+      "category": "textured",
+      "description": "Random texture with weak sparsity in DCT"
+    },
+    {
+      "key": "large_radial",
+      "path": "/Users/oylogunov/imcs/examples/input/20_radial_gradient_128x128.png",
+      "category": "large",
+      "description": "Larger synthetic image for scalability checks"
+    }
+  ]
+}

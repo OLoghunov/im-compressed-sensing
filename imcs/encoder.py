@@ -5,15 +5,26 @@ import struct
 from PIL import Image
 
 from .utils import (
+    dct2,
+    idct2,
     generate_measurement_matrix,
     IMCS_HEADER_V1_FMT,
     IMCS_HEADER_V2_EXT_FMT,
+    IMCS_HEADER_V3_EXT_FMT,
+    IMCS_FLAG_BLOCK_MEAN,
+    IMCS_FLAG_IS_2D,
+    IMCS_FLAG_LOW_FREQUENCY,
+    IMCS_FLAG_PER_BLOCK,
+    IMCS_QUANT_FLOAT64,
+    IMCS_QUANT_INT16,
+    IMCS_QUANT_INT8,
+    zigzag_indices,
 )
 
 
 class IMCSEncoder:
-    # IMCS file format: v1 legacy (32-byte header), v2 adds block metadata (+8 bytes)
-    FORMAT_VERSION = 2
+    # IMCS file format: v3 adds quantized measurement payloads.
+    FORMAT_VERSION = 3
 
     def __init__(
         self,
@@ -23,6 +34,9 @@ class IMCSEncoder:
         seed: Optional[int] = None,
         block_size: Optional[Tuple[int, int]] = None,
         measurement_mode: str = "shared",
+        measurement_dtype: str = "float64",
+        block_mean_residual: bool = True,
+        low_frequency_coeffs: int = 0,
     ):
         if not 0 < compression_ratio < 1:
             raise ValueError("Compression ratio must be between 0 and 1")
@@ -30,6 +44,10 @@ class IMCSEncoder:
             raise ValueError("sparsity_basis must be 'dct' or 'wavelet'")
         if measurement_mode not in {"shared", "per_block"}:
             raise ValueError("measurement_mode must be 'shared' or 'per_block'")
+        if measurement_dtype not in {"float64", "int16", "int8"}:
+            raise ValueError("measurement_dtype must be 'float64', 'int16', or 'int8'")
+        if low_frequency_coeffs < 0:
+            raise ValueError("low_frequency_coeffs must be non-negative")
 
         self.compression_ratio = compression_ratio
         self.sparsity_basis = sparsity_basis
@@ -37,6 +55,9 @@ class IMCSEncoder:
         self.seed = seed if seed is not None else np.random.randint(0, 2**31)
         self.block_size = block_size
         self.measurement_mode = measurement_mode
+        self.measurement_dtype = measurement_dtype
+        self.block_mean_residual = block_mean_residual
+        self.low_frequency_coeffs = low_frequency_coeffs
 
     def encode(self, data: np.ndarray) -> bytes:
         data = np.asarray(data, dtype=np.float64)
@@ -119,11 +140,28 @@ class IMCSEncoder:
         m_per_block = max(1, int(b_pixels * self.compression_ratio))
 
         measurements_list: list[np.ndarray] = []
+        block_means: list[float] = []
+        low_frequency_list: list[np.ndarray] = []
+        low_frequency_positions = zigzag_indices(bh, bw)[: self.low_frequency_coeffs]
         idx = 0
         for bi in range(n_blocks_h):
             for bj in range(n_blocks_w):
                 block = X_pad[bi * bh : (bi + 1) * bh, bj * bw : (bj + 1) * bw]
-                x_vec = block.reshape(-1, order="F")
+                block_mean = float(np.mean(block)) if self.block_mean_residual else 0.0
+                if self.block_mean_residual:
+                    block_means.append(block_mean)
+                residual_block = block - block_mean
+                if low_frequency_positions:
+                    coeffs = dct2(residual_block)
+                    side_coeffs = np.array(
+                        [coeffs[pos] for pos in low_frequency_positions], dtype=np.float64
+                    )
+                    low_frequency_list.append(side_coeffs)
+                    side_coeff_matrix = np.zeros_like(coeffs)
+                    for pos, value in zip(low_frequency_positions, side_coeffs):
+                        side_coeff_matrix[pos] = value
+                    residual_block = residual_block - idct2(side_coeff_matrix)
+                x_vec = residual_block.reshape(-1, order="F")
                 phi_seed = self.seed if self.measurement_mode == "shared" else self.seed + idx
                 Phi = generate_measurement_matrix(m_per_block, b_pixels, self.matrix_type, phi_seed)
                 measurements_list.append(Phi @ x_vec)
@@ -139,7 +177,51 @@ class IMCSEncoder:
             block_h=bh,
             block_w=bw,
             content_shape=(content_h, content_w),
+            block_means=np.asarray(block_means, dtype=np.float64)
+            if self.block_mean_residual
+            else None,
+            low_frequency_coefficients=np.vstack(low_frequency_list)
+            if low_frequency_list
+            else None,
         )
+
+    def _quantize_low_frequency_coefficients(
+        self, coefficients: Optional[np.ndarray]
+    ) -> tuple[int, float, bytes]:
+        if coefficients is None or coefficients.size == 0:
+            return 0, 1.0, b""
+        clipped_count = int(coefficients.shape[1])
+        max_abs = float(np.max(np.abs(coefficients)))
+        scale = max_abs / float(np.iinfo(np.int8).max) if max_abs > 0.0 else 1.0
+        info = np.iinfo(np.int8)
+        quantized = np.clip(np.rint(coefficients / scale), info.min, info.max).astype(np.int8)
+        return clipped_count, scale, quantized.tobytes()
+
+    def _quantize_measurements(self, measurements: np.ndarray) -> tuple[int, float, float, bytes]:
+        measurements_flat = measurements.flatten().astype(np.float64)
+        if self.measurement_dtype == "float64":
+            return IMCS_QUANT_FLOAT64, 1.0, 0.0, measurements_flat.tobytes()
+
+        max_abs = float(np.max(np.abs(measurements_flat))) if measurements_flat.size else 0.0
+        if max_abs <= 0.0:
+            scale = 1.0
+        elif self.measurement_dtype == "int8":
+            scale = max_abs / float(np.iinfo(np.int8).max)
+        else:
+            scale = max_abs / float(np.iinfo(np.int16).max)
+
+        if self.measurement_dtype == "int8":
+            info = np.iinfo(np.int8)
+            quantized = np.clip(np.rint(measurements_flat / scale), info.min, info.max).astype(
+                np.int8
+            )
+            return IMCS_QUANT_INT8, scale, 0.0, quantized.tobytes()
+
+        info = np.iinfo(np.int16)
+        quantized = np.clip(np.rint(measurements_flat / scale), info.min, info.max).astype(
+            np.int16
+        )
+        return IMCS_QUANT_INT16, scale, 0.0, quantized.tobytes()
 
     def _serialize(
         self,
@@ -150,6 +232,8 @@ class IMCSEncoder:
         block_h: int = 0,
         block_w: int = 0,
         content_shape: Optional[tuple] = None,
+        block_means: Optional[np.ndarray] = None,
+        low_frequency_coefficients: Optional[np.ndarray] = None,
     ) -> bytes:
         # Map sparsity basis to ID
         basis_map = {"dct": 0, "wavelet": 1}
@@ -161,13 +245,24 @@ class IMCSEncoder:
 
         # Flags
         is_2d = len(original_shape) == 2
-        flags = int(is_2d)
+        flags = IMCS_FLAG_IS_2D if is_2d else 0
         if self.measurement_mode == "per_block":
-            flags |= 0b10
+            flags |= IMCS_FLAG_PER_BLOCK
+        block_mean_bytes = b""
+        if block_means is not None and block_means.size:
+            flags |= IMCS_FLAG_BLOCK_MEAN
+            means_uint8 = np.clip(np.rint(block_means), 0, 255).astype(np.uint8)
+            block_mean_bytes = means_uint8.tobytes()
 
-        # Convert measurements to bytes
-        measurements_flat: np.ndarray = measurements.flatten().astype(np.float64)
-        measurements_bytes = measurements_flat.tobytes()
+        low_frequency_count, low_frequency_scale, low_frequency_bytes = (
+            self._quantize_low_frequency_coefficients(low_frequency_coefficients)
+        )
+        if low_frequency_count:
+            flags |= IMCS_FLAG_LOW_FREQUENCY
+
+        quantization_id, quantization_scale, quantization_offset, measurements_bytes = (
+            self._quantize_measurements(measurements)
+        )
 
         if content_shape is None:
             content_shape = original_shape
@@ -188,11 +283,25 @@ class IMCSEncoder:
             original_shape[1] if is_2d else 0,  # Width (0 for 1D)
             m_row,  # M_row (per-block M when block mode)
             m_col,  # M_col (0: 1D or legacy 2D; >0: number of blocks)
-            len(measurements_bytes),  # Data length
+            len(low_frequency_bytes)
+            + (8 if low_frequency_count else 0)
+            + len(block_mean_bytes)
+            + len(measurements_bytes),  # Data length
         )
         header += struct.pack(IMCS_HEADER_V2_EXT_FMT, block_h, block_w, ch, cw)
+        header += struct.pack(
+            IMCS_HEADER_V3_EXT_FMT,
+            quantization_id,
+            low_frequency_count,
+            0,
+            float(quantization_scale),
+            float(quantization_offset),
+        )
 
-        return header + measurements_bytes
+        low_frequency_scale_bytes = (
+            struct.pack("<d", float(low_frequency_scale)) if low_frequency_count else b""
+        )
+        return header + low_frequency_scale_bytes + low_frequency_bytes + block_mean_bytes + measurements_bytes
 
     def encode_file(self, input_path: Union[str, Path], output_path: Union[str, Path]) -> None:
         input_path = Path(input_path)
@@ -227,4 +336,7 @@ class IMCSEncoder:
             "format_version": self.FORMAT_VERSION,
             "block_size": self.block_size,
             "measurement_mode": self.measurement_mode,
+            "measurement_dtype": self.measurement_dtype,
+            "block_mean_residual": self.block_mean_residual,
+            "low_frequency_coeffs": self.low_frequency_coeffs,
         }

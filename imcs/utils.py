@@ -5,11 +5,41 @@ import numpy as np
 from scipy.fftpack import dct, idct
 from scipy.ndimage import gaussian_filter
 
-# IMCS binary layout: v1 = 32 bytes; v2 adds 8 bytes (block_h, block_w, content_h, content_w)
+# IMCS binary layout:
+# v1 = 32 bytes;
+# v2 adds 8 bytes (block_h, block_w, content_h, content_w);
+# v3 adds quantization metadata (quantization_id, low-frequency count, scale, offset).
 IMCS_HEADER_V1_FMT = "<4s B B B B I I I I I I"
 IMCS_HEADER_V1_SIZE = struct.calcsize(IMCS_HEADER_V1_FMT)
 IMCS_HEADER_V2_EXT_FMT = "<HHHH"
 IMCS_HEADER_V2_SIZE = IMCS_HEADER_V1_SIZE + struct.calcsize(IMCS_HEADER_V2_EXT_FMT)
+IMCS_HEADER_V3_EXT_FMT = "<BBHdd"
+IMCS_HEADER_V3_SIZE = IMCS_HEADER_V2_SIZE + struct.calcsize(IMCS_HEADER_V3_EXT_FMT)
+
+IMCS_QUANT_FLOAT64 = 0
+IMCS_QUANT_INT8 = 1
+IMCS_QUANT_INT16 = 2
+
+IMCS_FLAG_IS_2D = 0b001
+IMCS_FLAG_PER_BLOCK = 0b010
+IMCS_FLAG_BLOCK_MEAN = 0b100
+IMCS_FLAG_LOW_FREQUENCY = 0b1000
+
+
+def zigzag_indices(n_row: int, n_col: int, *, skip_dc: bool = True) -> list[tuple[int, int]]:
+    indices: list[tuple[int, int]] = []
+    for s in range(n_row + n_col - 1):
+        diagonal: list[tuple[int, int]] = []
+        for i in range(s + 1):
+            j = s - i
+            if i < n_row and j < n_col:
+                diagonal.append((i, j))
+        if s % 2 == 0:
+            diagonal.reverse()
+        indices.extend(diagonal)
+    if skip_dc and indices and indices[0] == (0, 0):
+        indices = indices[1:]
+    return indices
 
 
 def generate_measurement_matrix(
